@@ -1,13 +1,15 @@
 <script setup lang="ts">
 import { computed, ref, onMounted } from "vue";
 import { useI18n } from "vue-i18n";
-import { Copy, Trash2, Save, RefreshCw, Plus, Loader2 } from "lucide-vue-next";
+import { Copy, Eye, Trash2, Save, RefreshCw, Plus, Loader2 } from "lucide-vue-next";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import DangerConfirmDialog from "@/components/editor/DangerConfirmDialog.vue";
 import * as api from "@/lib/api";
 import type { RedisValue } from "@/lib/api";
+import { formatRedisMemberDetail } from "@/lib/redisValuePresentation";
 
 const { t } = useI18n();
 
@@ -29,10 +31,14 @@ const newField = ref("");
 const newValue = ref("");
 const newScore = ref("");
 const showDeleteConfirm = ref(false);
+const showMemberDetail = ref(false);
 const editingTtl = ref(false);
 const ttlInput = ref("");
 const collectionItems = ref<any[]>([]);
 const scanCursor = ref<number | undefined>(undefined);
+const selectedMemberTitle = ref("");
+const selectedMemberRaw = ref<unknown>("");
+const selectedMemberDetail = computed(() => formatRedisMemberDetail(selectedMemberRaw.value));
 
 type PendingDelete =
   | { kind: "key" }
@@ -121,6 +127,20 @@ function copyValue() {
   if (!data.value) return;
   const text = typeof data.value.value === "string" ? data.value.value : JSON.stringify(data.value.value, null, 2);
   navigator.clipboard.writeText(text);
+}
+
+function copyText(text: string) {
+  navigator.clipboard.writeText(text);
+}
+
+function copyMember(value: unknown) {
+  copyText(formatRedisMemberDetail(value).text);
+}
+
+function viewMember(title: string, value: unknown) {
+  selectedMemberTitle.value = title;
+  selectedMemberRaw.value = value;
+  showMemberDetail.value = true;
 }
 
 // TTL
@@ -312,7 +332,7 @@ onMounted(load);
             ><Plus class="w-3 h-3 mr-1" />Push</Button
           >
         </div>
-        <div class="grid grid-cols-[60px_1fr_32px] border-b bg-muted/50 shrink-0">
+        <div class="grid grid-cols-[60px_1fr_84px] border-b bg-muted/50 shrink-0">
           <div class="px-3 py-1 text-xs font-medium text-muted-foreground border-r">#</div>
           <div class="px-3 py-1 text-xs font-medium text-muted-foreground">Value</div>
           <div />
@@ -321,11 +341,27 @@ onMounted(load);
           <div
             v-for="(item, idx) in collectionItems"
             :key="idx"
-            class="grid grid-cols-[60px_1fr_32px] border-b text-sm font-mono hover:bg-accent/50 group"
+            class="grid grid-cols-[60px_1fr_84px] border-b text-sm font-mono hover:bg-accent/50 group"
           >
             <div class="px-3 py-1.5 text-xs text-muted-foreground border-r">{{ idx }}</div>
             <div class="px-3 py-1.5 truncate">{{ item }}</div>
-            <div class="flex items-center justify-center">
+            <div class="flex items-center justify-center gap-1">
+              <Button
+                variant="ghost"
+                size="icon"
+                class="h-5 w-5 opacity-0 group-hover:opacity-100"
+                :title="t('redis.viewMember')"
+                @click="viewMember(`#${idx}`, item)"
+                ><Eye class="w-3 h-3"
+              /></Button>
+              <Button
+                variant="ghost"
+                size="icon"
+                class="h-5 w-5 opacity-0 group-hover:opacity-100"
+                :title="t('redis.copyMember')"
+                @click="copyMember(item)"
+                ><Copy class="w-3 h-3"
+              /></Button>
               <Button
                 variant="ghost"
                 size="icon"
@@ -356,7 +392,7 @@ onMounted(load);
             ><Plus class="w-3 h-3 mr-1" />Add</Button
           >
         </div>
-        <div class="grid grid-cols-[1fr_32px] border-b bg-muted/50 shrink-0">
+        <div class="grid grid-cols-[1fr_84px] border-b bg-muted/50 shrink-0">
           <div class="px-3 py-1 text-xs font-medium text-muted-foreground">Member</div>
           <div />
         </div>
@@ -364,10 +400,26 @@ onMounted(load);
           <div
             v-for="(item, idx) in collectionItems"
             :key="idx"
-            class="grid grid-cols-[1fr_32px] border-b text-sm font-mono hover:bg-accent/50 group"
+            class="grid grid-cols-[1fr_84px] border-b text-sm font-mono hover:bg-accent/50 group"
           >
             <div class="px-3 py-1.5 truncate">{{ item }}</div>
-            <div class="flex items-center justify-center">
+            <div class="flex items-center justify-center gap-1">
+              <Button
+                variant="ghost"
+                size="icon"
+                class="h-5 w-5 opacity-0 group-hover:opacity-100"
+                :title="t('redis.viewMember')"
+                @click="viewMember(t('redis.member'), item)"
+                ><Eye class="w-3 h-3"
+              /></Button>
+              <Button
+                variant="ghost"
+                size="icon"
+                class="h-5 w-5 opacity-0 group-hover:opacity-100"
+                :title="t('redis.copyMember')"
+                @click="copyMember(item)"
+                ><Copy class="w-3 h-3"
+              /></Button>
               <Button
                 variant="ghost"
                 size="icon"
@@ -399,7 +451,7 @@ onMounted(load);
             ><Plus class="w-3 h-3 mr-1" />Set</Button
           >
         </div>
-        <div class="grid grid-cols-[minmax(8rem,0.3fr)_1fr_32px] border-b bg-muted/50 shrink-0">
+        <div class="grid grid-cols-[minmax(8rem,0.3fr)_1fr_84px] border-b bg-muted/50 shrink-0">
           <div class="px-3 py-1 text-xs font-medium text-muted-foreground border-r">Field</div>
           <div class="px-3 py-1 text-xs font-medium text-muted-foreground">Value</div>
           <div />
@@ -408,11 +460,27 @@ onMounted(load);
           <div
             v-for="(item, idx) in collectionItems"
             :key="idx"
-            class="grid grid-cols-[minmax(8rem,0.3fr)_1fr_32px] border-b text-sm font-mono hover:bg-accent/50 group"
+            class="grid grid-cols-[minmax(8rem,0.3fr)_1fr_84px] border-b text-sm font-mono hover:bg-accent/50 group"
           >
             <div class="px-3 py-1.5 text-blue-500 truncate border-r">{{ item.field }}</div>
             <div class="px-3 py-1.5 truncate text-muted-foreground">{{ item.value }}</div>
-            <div class="flex items-center justify-center">
+            <div class="flex items-center justify-center gap-1">
+              <Button
+                variant="ghost"
+                size="icon"
+                class="h-5 w-5 opacity-0 group-hover:opacity-100"
+                :title="t('redis.viewMember')"
+                @click="viewMember(String(item.field), item.value)"
+                ><Eye class="w-3 h-3"
+              /></Button>
+              <Button
+                variant="ghost"
+                size="icon"
+                class="h-5 w-5 opacity-0 group-hover:opacity-100"
+                :title="t('redis.copyMember')"
+                @click="copyMember(item.value)"
+                ><Copy class="w-3 h-3"
+              /></Button>
               <Button
                 variant="ghost"
                 size="icon"
@@ -444,7 +512,7 @@ onMounted(load);
             ><Plus class="w-3 h-3 mr-1" />Add</Button
           >
         </div>
-        <div class="grid grid-cols-[100px_1fr_32px] border-b bg-muted/50 shrink-0">
+        <div class="grid grid-cols-[100px_1fr_84px] border-b bg-muted/50 shrink-0">
           <div class="px-3 py-1 text-xs font-medium text-muted-foreground border-r">Score</div>
           <div class="px-3 py-1 text-xs font-medium text-muted-foreground">Member</div>
           <div />
@@ -453,11 +521,27 @@ onMounted(load);
           <div
             v-for="(item, idx) in collectionItems"
             :key="idx"
-            class="grid grid-cols-[100px_1fr_32px] border-b text-sm font-mono hover:bg-accent/50 group"
+            class="grid grid-cols-[100px_1fr_84px] border-b text-sm font-mono hover:bg-accent/50 group"
           >
             <div class="px-3 py-1.5 text-muted-foreground text-xs border-r">{{ item.score }}</div>
             <div class="px-3 py-1.5 truncate">{{ item.member }}</div>
-            <div class="flex items-center justify-center">
+            <div class="flex items-center justify-center gap-1">
+              <Button
+                variant="ghost"
+                size="icon"
+                class="h-5 w-5 opacity-0 group-hover:opacity-100"
+                :title="t('redis.viewMember')"
+                @click="viewMember(String(item.score), item.member)"
+                ><Eye class="w-3 h-3"
+              /></Button>
+              <Button
+                variant="ghost"
+                size="icon"
+                class="h-5 w-5 opacity-0 group-hover:opacity-100"
+                :title="t('redis.copyMember')"
+                @click="copyMember(item.member)"
+                ><Copy class="w-3 h-3"
+              /></Button>
               <Button
                 variant="ghost"
                 size="icon"
@@ -490,10 +574,28 @@ onMounted(load);
           <div
             v-for="(val, field) in entry.fields"
             :key="String(field)"
-            class="grid grid-cols-[minmax(6rem,0.35fr)_1fr] gap-3 py-0.5"
+            class="grid grid-cols-[minmax(6rem,0.35fr)_1fr_56px] gap-3 py-0.5 group"
           >
             <span class="truncate text-blue-500">{{ field }}</span>
             <span class="truncate text-muted-foreground">{{ val }}</span>
+            <span class="flex justify-end gap-1">
+              <Button
+                variant="ghost"
+                size="icon"
+                class="h-5 w-5 opacity-0 group-hover:opacity-100"
+                :title="t('redis.viewMember')"
+                @click="viewMember(String(field), val)"
+                ><Eye class="w-3 h-3"
+              /></Button>
+              <Button
+                variant="ghost"
+                size="icon"
+                class="h-5 w-5 opacity-0 group-hover:opacity-100"
+                :title="t('redis.copyMember')"
+                @click="copyMember(val)"
+                ><Copy class="w-3 h-3"
+              /></Button>
+            </span>
           </div>
         </div>
       </div>
@@ -511,5 +613,26 @@ onMounted(load);
       :confirm-label="t('dangerDialog.deleteConfirm')"
       @confirm="confirmDelete"
     />
+
+    <Dialog v-model:open="showMemberDetail">
+      <DialogContent class="sm:max-w-[760px] max-h-[82vh] overflow-hidden flex flex-col">
+        <DialogHeader>
+          <DialogTitle class="flex items-center gap-2 pr-8">
+            <span class="truncate">{{ selectedMemberTitle || t("redis.memberDetail") }}</span>
+            <Badge variant="outline" class="shrink-0 text-xs">{{ selectedMemberDetail.format.toUpperCase() }}</Badge>
+          </DialogTitle>
+        </DialogHeader>
+        <pre
+          class="min-h-0 flex-1 overflow-auto rounded-md border bg-muted/20 p-3 font-mono text-xs leading-relaxed whitespace-pre-wrap break-words"
+          >{{ selectedMemberDetail.text }}</pre
+        >
+        <DialogFooter class="shrink-0">
+          <Button variant="outline" @click="copyText(selectedMemberDetail.text)">
+            <Copy class="h-4 w-4" />
+            {{ t("redis.copyMember") }}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   </div>
 </template>

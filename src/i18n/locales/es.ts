@@ -716,6 +716,10 @@ export default {
     executeCommand: "Ejecutar comando",
     commandEmpty: "Ingresa un comando Redis",
     commandBlocked: "Este comando Redis está bloqueado por seguridad",
+    member: "Miembro",
+    memberDetail: "Detalle del miembro",
+    viewMember: "Ver valor completo",
+    copyMember: "Copiar miembro",
   },
   mongo: {
     documents: "{count} documentos",

@@ -701,6 +701,10 @@ export default {
     executeCommand: "执行命令",
     commandEmpty: "请输入 Redis 命令",
     commandBlocked: "出于安全考虑，此 Redis 命令已被阻止",
+    member: "成员",
+    memberDetail: "成员详情",
+    viewMember: "查看完整内容",
+    copyMember: "复制成员",
   },
   mongo: {
     documents: "{count} 个文档",

@@ -715,6 +715,10 @@ export default {
     executeCommand: "Execute command",
     commandEmpty: "Enter a Redis command",
     commandBlocked: "This Redis command is blocked for safety",
+    member: "Member",
+    memberDetail: "Member detail",
+    viewMember: "View full value",
+    copyMember: "Copy member",
   },
   mongo: {
     documents: "{count} documents",
