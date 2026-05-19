@@ -154,22 +154,16 @@ export function useDataGridExport(options: UseDataGridExportOptions) {
 
     if (hasRowSelection.value && selectedRowIds.value.size > 0) {
       const items = displayItems.value.filter((item) => selectedRowIds.value.has(item.id));
-      const statements = items.map((item) => {
-        const vals = item.data.map((v) => escapeVal(v)).join(", ");
-        return `INSERT INTO ${table} (${cols}) VALUES (${vals});`;
-      });
-      await copyText(statements.join("\n"));
+      const valueRows = items.map((item) => `(${item.data.map((v) => escapeVal(v)).join(", ")})`);
+      await copyText(`INSERT INTO ${table} (${cols}) VALUES\n${valueRows.join(",\n")};`);
       return;
     }
 
     const range = selectedRange.value;
     if (range && range.startRow !== range.endRow) {
       const items = displayItems.value.slice(range.startRow, range.endRow + 1);
-      const statements = items.map((item) => {
-        const vals = item.data.map((v) => escapeVal(v)).join(", ");
-        return `INSERT INTO ${table} (${cols}) VALUES (${vals});`;
-      });
-      await copyText(statements.join("\n"));
+      const valueRows = items.map((item) => `(${item.data.map((v) => escapeVal(v)).join(", ")})`);
+      await copyText(`INSERT INTO ${table} (${cols}) VALUES\n${valueRows.join(",\n")};`);
       return;
     }
 
