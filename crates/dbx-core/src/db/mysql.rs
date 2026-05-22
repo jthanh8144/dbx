@@ -90,6 +90,28 @@ fn mysql_datetime_to_string(value: DateTime<Utc>) -> String {
     value.naive_utc().to_string()
 }
 
+fn is_mysql_lossless_integer_type(type_name: &str) -> bool {
+    let upper_type = type_name.to_uppercase();
+    upper_type.contains("BIGINT") || upper_type.contains("LARGEINT")
+}
+
+fn mysql_lossless_integer_to_json(row: &MySqlRow, idx: usize) -> serde_json::Value {
+    row.try_get::<String, _>(idx)
+        .map(serde_json::Value::String)
+        .or_else(|_| row.try_get::<Decimal, _>(idx).map(|v: Decimal| serde_json::Value::String(v.to_string())))
+        .or_else(|_| row.try_get::<i64, _>(idx).map(|v| serde_json::Value::String(v.to_string())))
+        .or_else(|_| row.try_get::<u64, _>(idx).map(|v| serde_json::Value::String(v.to_string())))
+        .or_else(|_| {
+            row.try_get::<Vec<u8>, _>(idx).map(|b| serde_json::Value::String(String::from_utf8_lossy(&b).to_string()))
+        })
+        .or_else(|_| row.try_get_unchecked::<String, _>(idx).map(serde_json::Value::String))
+        .or_else(|_| {
+            row.try_get_unchecked::<Vec<u8>, _>(idx)
+                .map(|b| serde_json::Value::String(String::from_utf8_lossy(&b).to_string()))
+        })
+        .unwrap_or(serde_json::Value::Null)
+}
+
 fn mysql_value_to_json(row: &MySqlRow, idx: usize, type_name: &str) -> serde_json::Value {
     if row.try_get_raw(idx).map(|v| v.is_null()).unwrap_or(true) {
         return serde_json::Value::Null;
@@ -116,12 +138,8 @@ fn mysql_value_to_json(row: &MySqlRow, idx: usize, type_name: &str) -> serde_jso
             .unwrap_or(serde_json::Value::Null);
     }
 
-    if upper_type.contains("BIGINT") {
-        return row
-            .try_get::<i64, _>(idx)
-            .map(|v| serde_json::Value::String(v.to_string()))
-            .or_else(|_| row.try_get::<u64, _>(idx).map(|v| serde_json::Value::String(v.to_string())))
-            .unwrap_or(serde_json::Value::Null);
+    if is_mysql_lossless_integer_type(&upper_type) {
+        return mysql_lossless_integer_to_json(row, idx);
     }
 
     if upper_type == "DECIMAL" {
@@ -676,6 +694,11 @@ mod tests {
         let sql = columns_sql("app", "users");
 
         assert!(sql.contains("c.COLUMN_KEY"));
+    }
+
+    #[test]
+    fn mysql_largeint_uses_lossless_integer_decoding() {
+        assert!(is_mysql_lossless_integer_type("LARGEINT"));
     }
 
     #[test]

@@ -3,15 +3,24 @@ import { computed, ref, watch } from "vue";
 import { RecycleScroller } from "vue-virtual-scroller";
 import {
   ArrowDown,
+  ArrowRightLeft,
   ArrowUp,
   Braces,
   Code2,
   Copy,
+  CopyPlus,
+  Download,
+  Eraser,
   Eye,
+  FileCode,
+  FileUp,
   Loader2,
+  Network,
   Pencil,
   PencilLine,
+  PencilRuler,
   RefreshCw,
+  Scissors,
   Search,
   ScrollText,
   Table2,
@@ -28,13 +37,24 @@ import {
   ContextMenuContent,
   ContextMenuItem,
   ContextMenuSeparator,
+  ContextMenuSub,
+  ContextMenuSubContent,
+  ContextMenuSubTrigger,
   ContextMenuTrigger,
 } from "@/components/ui/context-menu";
 import DangerConfirmDialog from "@/components/editor/DangerConfirmDialog.vue";
 import * as api from "@/lib/api";
 import type { ConnectionConfig, ObjectInfo, ObjectSourceKind } from "@/types/database";
 import { isSchemaAware } from "@/lib/databaseCapabilities";
-import { buildTableSelectSql, qualifiedTableName } from "@/lib/tableSelectSql";
+import {
+  supportsSchemaDiagram,
+  supportsTableImport,
+  supportsTableStructureEditing,
+  supportsTableTruncate,
+  usesPostgresLikeStructureCopy,
+  usesFetchFirst,
+} from "@/lib/databaseFeatureSupport";
+import { buildTableSelectSql, qualifiedTableName, quoteTableIdentifier } from "@/lib/tableSelectSql";
 import { useToast } from "@/composables/useToast";
 import {
   buildExecutableObjectSourceStatements,
@@ -44,6 +64,9 @@ import {
 } from "@/lib/objectSourceEditor";
 import { buildRenameObjectSql, supportsObjectRename } from "@/lib/objectRenameSql";
 import { buildViewDdl } from "@/lib/viewDdl";
+import { isTauriRuntime } from "@/lib/tauriRuntime";
+import { formatSqlInsert } from "@/lib/exportFormats";
+import { fetchTableDataForExport } from "@/lib/tableDataExport";
 import { useConnectionStore } from "@/stores/connectionStore";
 import { useQueryStore } from "@/stores/queryStore";
 import QueryEditor from "@/components/editor/QueryEditor.vue";
@@ -85,6 +108,7 @@ const rows = ref<ObjectBrowserRow[]>([]);
 const rootRef = ref<HTMLElement>();
 const search = ref("");
 const objectFilter = ref<ObjectFilter>("all");
+const userHasSelectedFilter = ref(false);
 const sortKey = ref<ObjectBrowserSortKey>("name");
 const sortDirection = ref<ObjectBrowserSortDirection>("asc");
 const loadingSchemas = ref(false);
@@ -104,6 +128,13 @@ const showRenameDialog = ref(false);
 const renameTarget = ref<ObjectBrowserRow | null>(null);
 const renameInput = ref("");
 const renameError = ref("");
+const showTruncateConfirm = ref(false);
+const truncateTarget = ref<ObjectBrowserRow | null>(null);
+const showEmptyConfirm = ref(false);
+const emptyTarget = ref<ObjectBrowserRow | null>(null);
+const showDuplicateDialog = ref(false);
+const duplicateTarget = ref<ObjectBrowserRow | null>(null);
+const duplicateTableName = ref("");
 let loadId = 0;
 
 const needsSchema = computed(() => isSchemaAware(props.connection.db_type));
@@ -111,6 +142,10 @@ const tableCount = computed(() => rows.value.filter((row) => row.type === "TABLE
 const viewCount = computed(() => rows.value.filter((row) => row.type === "VIEW").length);
 const procedureCount = computed(() => rows.value.filter((row) => row.type === "PROCEDURE").length);
 const functionCount = computed(() => rows.value.filter((row) => row.type === "FUNCTION").length);
+const canOpenStructureEditor = computed(() => supportsTableStructureEditing(props.connection.db_type));
+const canOpenDiagram = computed(() => !!props.database && supportsSchemaDiagram(props.connection.db_type));
+const canOpenTableImport = computed(() => !!props.database && supportsTableImport(props.connection.db_type));
+const supportsTruncateTable = computed(() => supportsTableTruncate(props.connection.db_type));
 const sourceDialect = computed<"mysql" | "postgres" | "sqlserver">(() => {
   if (props.connection.db_type === "postgres" || props.connection.db_type === "gaussdb") return "postgres";
   if (props.connection.db_type === "sqlserver") return "sqlserver";
@@ -439,6 +474,277 @@ function closeSource() {
   sourceSaveError.value = "";
 }
 
+function quoteIdent(name: string): string {
+  return quoteTableIdentifier(props.connection.db_type, name);
+}
+
+async function saveFileContent(content: string, defaultFileName: string, filterName: string, filterExt: string) {
+  if (isTauriRuntime()) {
+    const { save } = await import("@tauri-apps/plugin-dialog");
+    const { writeTextFile } = await import("@tauri-apps/plugin-fs");
+    const path = await save({
+      defaultPath: defaultFileName,
+      filters: [{ name: filterName, extensions: [filterExt] }],
+    });
+    if (path) await writeTextFile(path, content);
+  } else {
+    const blob = new Blob([content], { type: "text/plain" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = defaultFileName;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+}
+
+function openViewData(row: ObjectBrowserRow) {
+  emit("openTable", { tableName: row.name, schema: row.schema });
+}
+
+function openStructureEditor(row: ObjectBrowserRow) {
+  if (row.type !== "TABLE") return;
+  connectionStore.structureEditorSource = {
+    connectionId: props.connection.id,
+    database: props.database,
+    schema: row.schema || selectedSchema.value,
+    tableName: row.name,
+  };
+}
+
+function openDiagram(row: ObjectBrowserRow) {
+  connectionStore.diagramSource = {
+    connectionId: props.connection.id,
+    database: props.database,
+    schema: row.schema || selectedSchema.value,
+    tableName: row.type === "TABLE" ? row.name : undefined,
+  };
+}
+
+function openTableImport(row: ObjectBrowserRow) {
+  if (row.type !== "TABLE") return;
+  connectionStore.tableImportSource = {
+    connectionId: props.connection.id,
+    database: props.database,
+    schema: row.schema || selectedSchema.value,
+    tableName: row.name,
+  };
+}
+
+function openDataCompare(row: ObjectBrowserRow) {
+  connectionStore.dataCompareSource = {
+    connectionId: props.connection.id,
+    database: props.database,
+    schema: row.schema || selectedSchema.value,
+    tableName: row.type === "TABLE" ? row.name : undefined,
+  };
+}
+
+function openDatabaseExport(row: ObjectBrowserRow) {
+  connectionStore.databaseExportSource = {
+    connectionId: props.connection.id,
+    database: props.database,
+    schema: row.schema || selectedSchema.value,
+    tableName: row.type === "TABLE" || row.type === "VIEW" ? row.name : undefined,
+  };
+}
+
+async function exportStructure(row: ObjectBrowserRow) {
+  try {
+    const schema = row.schema || selectedSchema.value || props.database;
+    const ddl = await api.getTableDdl(props.connection.id, props.database, schema, row.name);
+    await saveFileContent(ddl + "\n", `${row.name}.sql`, "SQL", "sql");
+  } catch (e: any) {
+    console.error("Export structure failed:", e);
+  }
+}
+
+async function exportData(row: ObjectBrowserRow, format: "csv" | "json" | "sql") {
+  try {
+    const schema = row.schema || selectedSchema.value;
+    const qualName =
+      isSchemaAware(props.connection.db_type) && schema
+        ? `${quoteIdent(schema)}.${quoteIdent(row.name)}`
+        : quoteIdent(row.name);
+    const queryColumns =
+      props.connection.db_type === "neo4j"
+        ? (await api.getColumns(props.connection.id, props.database, schema || props.database, row.name)).map(
+            (column) => column.name,
+          )
+        : undefined;
+    const result = await fetchTableDataForExport({
+      databaseType: props.connection.db_type,
+      schema,
+      tableName: row.name,
+      columns: queryColumns,
+      executePage: (sql) => api.executeQuery(props.connection.id, props.database, sql),
+    });
+
+    if (format === "csv") {
+      let outputPath = `${row.name}.csv`;
+      if (isTauriRuntime()) {
+        const { save } = await import("@tauri-apps/plugin-dialog");
+        const path = await save({
+          defaultPath: outputPath,
+          filters: [{ name: "CSV", extensions: ["csv"] }],
+        });
+        if (!path) return;
+        outputPath = path as string;
+      }
+      await api.exportQueryResultCsv(outputPath, result.columns, result.rows);
+      toast(t("grid.exported"));
+      return;
+    }
+
+    if (format === "json") {
+      let outputPath = `${row.name}.json`;
+      if (isTauriRuntime()) {
+        const { save } = await import("@tauri-apps/plugin-dialog");
+        const path = await save({
+          defaultPath: outputPath,
+          filters: [{ name: "JSON", extensions: ["json"] }],
+        });
+        if (!path) return;
+        outputPath = path as string;
+      }
+      await api.exportQueryResultJson(outputPath, result.columns, result.rows);
+      toast(t("grid.exported"));
+      return;
+    }
+
+    const content = formatSqlInsert(qualName, result.columns, result.rows, quoteIdent);
+    await saveFileContent(content, `${row.name}.sql`, "SQL", "sql");
+    toast(t("grid.exported"));
+  } catch (e: any) {
+    toast(t("grid.exportFailed", { message: e?.message || String(e) }), 5000);
+  }
+}
+
+async function exportDataXlsx(row: ObjectBrowserRow) {
+  try {
+    const schema = row.schema || selectedSchema.value;
+    const queryColumns =
+      props.connection.db_type === "neo4j"
+        ? (await api.getColumns(props.connection.id, props.database, schema || props.database, row.name)).map(
+            (column) => column.name,
+          )
+        : undefined;
+    const result = await fetchTableDataForExport({
+      databaseType: props.connection.db_type,
+      schema,
+      tableName: row.name,
+      columns: queryColumns,
+      executePage: (sql) => api.executeQuery(props.connection.id, props.database, sql),
+    });
+
+    let outputPath = `${row.name}.xlsx`;
+    if (isTauriRuntime()) {
+      const { save } = await import("@tauri-apps/plugin-dialog");
+      const path = await save({
+        defaultPath: outputPath,
+        filters: [{ name: "Excel", extensions: ["xlsx"] }],
+      });
+      if (!path) return;
+      outputPath = path as string;
+    }
+    await api.exportQueryResultXlsx(outputPath, row.name, result.columns, result.rows);
+    toast(t("grid.exported"));
+  } catch (e: any) {
+    toast(t("grid.exportFailed", { message: e?.message || String(e) }), 5000);
+  }
+}
+
+function requestDuplicateStructure(row: ObjectBrowserRow) {
+  duplicateTarget.value = row;
+  duplicateTableName.value = `${row.name}_copy`;
+  showDuplicateDialog.value = true;
+}
+
+async function confirmDuplicateStructure() {
+  const row = duplicateTarget.value;
+  const newName = duplicateTableName.value.trim();
+  if (!row || !newName) return;
+  showDuplicateDialog.value = false;
+  try {
+    const schema = row.schema || selectedSchema.value;
+    const source = qualifiedName(row);
+    const target = qualifiedTableName({
+      databaseType: props.connection.db_type,
+      schema,
+      tableName: newName,
+    });
+    let sql: string;
+    const dbType = props.connection.db_type;
+    if (dbType === "mysql") {
+      sql = `CREATE TABLE ${target} LIKE ${source};`;
+    } else if (usesPostgresLikeStructureCopy(dbType)) {
+      sql = `CREATE TABLE ${target} (LIKE ${source} INCLUDING ALL);`;
+    } else if (dbType === "sqlserver") {
+      sql = `SELECT TOP 0 * INTO ${target} FROM ${source};`;
+    } else if (usesFetchFirst(dbType)) {
+      sql = `CREATE TABLE ${target} AS SELECT * FROM ${source} WHERE 1=0`;
+    } else {
+      sql = `CREATE TABLE ${target} AS SELECT * FROM ${source} WHERE 0;`;
+    }
+    await api.executeQuery(props.connection.id, props.database, sql, schema);
+    toast(t("contextMenu.duplicateStructureSuccess", { name: newName }));
+    await reload();
+    await connectionStore.refreshObjectListTreeNode(props.connection.id, props.database, schema);
+  } catch (e: any) {
+    toast(t("contextMenu.tableOperationFailed", { message: e?.message || String(e) }), 5000);
+  }
+}
+
+function buildTruncateTableSql(row: ObjectBrowserRow): string {
+  const name = qualifiedName(row);
+  const dbType = props.connection.db_type;
+  if (dbType === "sqlite" || dbType === "duckdb") return `DELETE FROM ${name};`;
+  return `TRUNCATE TABLE ${name};`;
+}
+
+function requestTruncateTable(row: ObjectBrowserRow) {
+  truncateTarget.value = row;
+  showTruncateConfirm.value = true;
+}
+
+async function confirmTruncateTable() {
+  const row = truncateTarget.value;
+  if (!row) return;
+  try {
+    await api.executeQuery(props.connection.id, props.database, buildTruncateTableSql(row));
+    toast(t("contextMenu.truncateTableSuccess", { name: row.name }));
+  } catch (e: any) {
+    toast(t("contextMenu.tableOperationFailed", { message: e?.message || String(e) }), 5000);
+  }
+  truncateTarget.value = null;
+}
+
+function buildEmptyTableSql(row: ObjectBrowserRow): string {
+  return `DELETE FROM ${qualifiedName(row)};`;
+}
+
+function requestEmptyTable(row: ObjectBrowserRow) {
+  emptyTarget.value = row;
+  showEmptyConfirm.value = true;
+}
+
+async function confirmEmptyTable() {
+  const row = emptyTarget.value;
+  if (!row) return;
+  try {
+    await api.executeQuery(props.connection.id, props.database, buildEmptyTableSql(row));
+    toast(t("contextMenu.emptyTableSuccess", { name: row.name }));
+  } catch (e: any) {
+    toast(t("contextMenu.tableOperationFailed", { message: e?.message || String(e) }), 5000);
+  }
+  emptyTarget.value = null;
+}
+
+function copyName(row: ObjectBrowserRow) {
+  navigator.clipboard.writeText(row.name);
+  toast(t("connection.copied"), 2000);
+}
+
 function copySource() {
   if (!sourceContent.value) return;
   navigator.clipboard.writeText(sourceContent.value);
@@ -527,7 +833,12 @@ async function loadObjects() {
     if (id !== loadId) return;
     error.value = e?.message || String(e);
   } finally {
-    if (id === loadId) loadingObjects.value = false;
+    if (id === loadId) {
+      loadingObjects.value = false;
+      if (!userHasSelectedFilter.value && tableCount.value > 0) {
+        objectFilter.value = "tables";
+      }
+    }
   }
 }
 
@@ -539,6 +850,8 @@ async function reload() {
 function onSchemaChange(value: any) {
   selectedSchema.value = typeof value === "string" && value ? value : undefined;
   emit("schemaChange", selectedSchema.value);
+  userHasSelectedFilter.value = false;
+  objectFilter.value = "all";
   void loadObjects();
 }
 
@@ -588,6 +901,8 @@ watch(
   () => [props.connection.id, props.database, props.schema] as const,
   () => {
     selectedSchema.value = props.schema;
+    userHasSelectedFilter.value = false;
+    objectFilter.value = "all";
     void reload();
   },
   { immediate: true },
@@ -622,7 +937,10 @@ watch(
             type="button"
             class="h-6 rounded-sm px-2 text-xs text-muted-foreground transition-colors hover:text-foreground"
             :class="{ 'bg-background text-foreground shadow-sm': objectFilter === filter }"
-            @click="objectFilter = filter"
+            @click="
+              userHasSelectedFilter = true;
+              objectFilter = filter;
+            "
           >
             {{ filterLabel(filter) }}
           </button>
@@ -747,19 +1065,70 @@ watch(
                 <ContextMenuItem @click="openRow(item)">
                   <Table2 class="w-4 h-4 mr-2" /> {{ t("contextMenu.viewData") }}
                 </ContextMenuItem>
-                <ContextMenuItem @click="openNewQuery(item)">
-                  <TerminalSquare class="w-4 h-4 mr-2" /> {{ t("contextMenu.newQuery") }}
+                <ContextMenuItem v-if="canOpenStructureEditor" @click="openStructureEditor(item)">
+                  <PencilRuler class="w-4 h-4 mr-2" /> {{ t("contextMenu.editStructure") }}
                 </ContextMenuItem>
                 <ContextMenuItem v-if="canRename(item)" @click="requestRename(item)">
                   <Pencil class="w-4 h-4 mr-2" /> {{ t("contextMenu.renameObject") }}
                 </ContextMenuItem>
+                <ContextMenuItem @click="openNewQuery(item)">
+                  <TerminalSquare class="w-4 h-4 mr-2" /> {{ t("contextMenu.newQuery") }}
+                </ContextMenuItem>
+                <ContextMenuItem v-if="canOpenDiagram" @click="openDiagram(item)">
+                  <Network class="w-4 h-4 mr-2" /> {{ t("diagram.open") }}
+                </ContextMenuItem>
+                <ContextMenuItem v-if="canOpenTableImport" @click="openTableImport(item)">
+                  <FileUp class="w-4 h-4 mr-2" /> {{ t("contextMenu.importData") }}
+                </ContextMenuItem>
+                <ContextMenuItem @click="openDataCompare(item)">
+                  <ArrowRightLeft class="w-4 h-4 mr-2" /> {{ t("dataCompare.title") }}
+                </ContextMenuItem>
                 <ContextMenuSeparator />
+                <ContextMenuSub>
+                  <ContextMenuSubTrigger>
+                    <Download class="w-4 h-4 mr-2" /> {{ t("contextMenu.exportData") }}
+                  </ContextMenuSubTrigger>
+                  <ContextMenuSubContent>
+                    <ContextMenuItem @click="exportData(item, 'csv')">CSV</ContextMenuItem>
+                    <ContextMenuItem @click="exportData(item, 'json')">JSON</ContextMenuItem>
+                    <ContextMenuItem @click="exportData(item, 'sql')">SQL INSERT</ContextMenuItem>
+                    <ContextMenuItem @click="exportDataXlsx(item)">XLSX</ContextMenuItem>
+                  </ContextMenuSubContent>
+                </ContextMenuSub>
+                <ContextMenuItem @click="openDatabaseExport(item)">
+                  <Download class="w-4 h-4 mr-2" /> {{ t("contextMenu.exportDatabase") }}
+                </ContextMenuItem>
+                <ContextMenuItem @click="exportStructure(item)">
+                  <FileCode class="w-4 h-4 mr-2" /> {{ t("contextMenu.exportStructure") }}
+                </ContextMenuItem>
+                <ContextMenuSeparator />
+                <ContextMenuItem @click="requestDuplicateStructure(item)">
+                  <CopyPlus class="w-4 h-4 mr-2" /> {{ t("contextMenu.duplicateStructure") }}
+                </ContextMenuItem>
+                <ContextMenuSeparator />
+                <ContextMenuItem
+                  v-if="supportsTruncateTable"
+                  class="text-destructive"
+                  @click="requestTruncateTable(item)"
+                >
+                  <Scissors class="w-4 h-4 mr-2" /> {{ t("contextMenu.truncateTable") }}
+                </ContextMenuItem>
+                <ContextMenuItem class="text-destructive" @click="requestEmptyTable(item)">
+                  <Eraser class="w-4 h-4 mr-2" /> {{ t("contextMenu.emptyTable") }}
+                </ContextMenuItem>
                 <ContextMenuItem class="text-destructive" @click="requestDrop(item)">
                   <Trash2 class="w-4 h-4 mr-2" /> {{ t("contextMenu.dropTable") }}
+                </ContextMenuItem>
+                <ContextMenuSeparator />
+                <ContextMenuItem @click="copyName(item)">
+                  <Copy class="w-4 h-4 mr-2" /> {{ t("contextMenu.copyName") }}
                 </ContextMenuItem>
               </template>
               <!-- VIEW -->
               <template v-else-if="item.type === 'VIEW'">
+                <ContextMenuItem @click="openViewData(item)">
+                  <Table2 class="w-4 h-4 mr-2" /> {{ t("contextMenu.viewData") }}
+                </ContextMenuItem>
                 <ContextMenuItem @click="openSource(item)">
                   <Code2 class="w-4 h-4 mr-2" /> {{ t("contextMenu.viewSource") }}
                 </ContextMenuItem>
@@ -769,9 +1138,37 @@ watch(
                 <ContextMenuItem v-if="canRename(item)" @click="requestRename(item)">
                   <Pencil class="w-4 h-4 mr-2" /> {{ t("contextMenu.renameObject") }}
                 </ContextMenuItem>
+                <ContextMenuItem @click="openNewQuery(item)">
+                  <TerminalSquare class="w-4 h-4 mr-2" /> {{ t("contextMenu.newQuery") }}
+                </ContextMenuItem>
+                <ContextMenuItem v-if="canOpenDiagram" @click="openDiagram(item)">
+                  <Network class="w-4 h-4 mr-2" /> {{ t("diagram.open") }}
+                </ContextMenuItem>
+                <ContextMenuSeparator />
+                <ContextMenuSub>
+                  <ContextMenuSubTrigger>
+                    <Download class="w-4 h-4 mr-2" /> {{ t("contextMenu.exportData") }}
+                  </ContextMenuSubTrigger>
+                  <ContextMenuSubContent>
+                    <ContextMenuItem @click="exportData(item, 'csv')">CSV</ContextMenuItem>
+                    <ContextMenuItem @click="exportData(item, 'json')">JSON</ContextMenuItem>
+                    <ContextMenuItem @click="exportData(item, 'sql')">SQL INSERT</ContextMenuItem>
+                    <ContextMenuItem @click="exportDataXlsx(item)">XLSX</ContextMenuItem>
+                  </ContextMenuSubContent>
+                </ContextMenuSub>
+                <ContextMenuItem @click="openDatabaseExport(item)">
+                  <Download class="w-4 h-4 mr-2" /> {{ t("contextMenu.exportDatabase") }}
+                </ContextMenuItem>
+                <ContextMenuItem @click="exportStructure(item)">
+                  <FileCode class="w-4 h-4 mr-2" /> {{ t("contextMenu.exportStructure") }}
+                </ContextMenuItem>
                 <ContextMenuSeparator />
                 <ContextMenuItem class="text-destructive" @click="requestDrop(item)">
                   <Trash2 class="w-4 h-4 mr-2" /> {{ t("contextMenu.dropView") }}
+                </ContextMenuItem>
+                <ContextMenuSeparator />
+                <ContextMenuItem @click="copyName(item)">
+                  <Copy class="w-4 h-4 mr-2" /> {{ t("contextMenu.copyName") }}
                 </ContextMenuItem>
               </template>
               <!-- PROCEDURE / FUNCTION -->
@@ -786,6 +1183,10 @@ watch(
                 <ContextMenuItem class="text-destructive" @click="requestDrop(item)">
                   <Trash2 class="w-4 h-4 mr-2" />
                   {{ item.type === "PROCEDURE" ? t("contextMenu.dropProcedure") : t("contextMenu.dropFunction") }}
+                </ContextMenuItem>
+                <ContextMenuSeparator />
+                <ContextMenuItem @click="copyName(item)">
+                  <Copy class="w-4 h-4 mr-2" /> {{ t("contextMenu.copyName") }}
                 </ContextMenuItem>
               </template>
             </ContextMenuContent>
@@ -909,6 +1310,43 @@ watch(
         <Button variant="outline" @click="showRenameDialog = false">{{ t("dangerDialog.cancel") }}</Button>
         <Button :disabled="!renameInput.trim() || renameInput.trim() === renameTarget?.name" @click="confirmRename">
           {{ t("contextMenu.renameObject") }}
+        </Button>
+      </DialogFooter>
+    </DialogContent>
+  </Dialog>
+
+  <DangerConfirmDialog
+    v-model:open="showTruncateConfirm"
+    :title="t('contextMenu.confirmTruncateTableTitle')"
+    :message="t('contextMenu.confirmTruncateTableMessage', { name: truncateTarget?.name ?? '' })"
+    :sql="truncateTarget ? buildTruncateTableSql(truncateTarget) : ''"
+    :confirm-label="t('contextMenu.truncateTable')"
+    @confirm="confirmTruncateTable"
+  />
+
+  <DangerConfirmDialog
+    v-model:open="showEmptyConfirm"
+    :title="t('contextMenu.confirmEmptyTableTitle')"
+    :message="t('contextMenu.confirmEmptyTableMessage', { name: emptyTarget?.name ?? '' })"
+    :sql="emptyTarget ? buildEmptyTableSql(emptyTarget) : ''"
+    :confirm-label="t('contextMenu.emptyTable')"
+    @confirm="confirmEmptyTable"
+  />
+
+  <Dialog v-model:open="showDuplicateDialog">
+    <DialogContent class="sm:max-w-[400px]">
+      <DialogHeader>
+        <DialogTitle>{{ t("contextMenu.duplicateNameTitle") }}</DialogTitle>
+      </DialogHeader>
+      <Input
+        v-model="duplicateTableName"
+        :placeholder="t('contextMenu.duplicateNamePlaceholder')"
+        @keydown.enter.prevent="confirmDuplicateStructure"
+      />
+      <DialogFooter>
+        <Button variant="outline" @click="showDuplicateDialog = false">{{ t("dangerDialog.cancel") }}</Button>
+        <Button :disabled="!duplicateTableName.trim()" @click="confirmDuplicateStructure">
+          {{ t("dangerDialog.confirm") }}
         </Button>
       </DialogFooter>
     </DialogContent>
