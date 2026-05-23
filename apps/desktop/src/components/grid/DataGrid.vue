@@ -3951,76 +3951,76 @@ defineExpose({
                               <PopoverContent
                                 align="start"
                                 side="bottom"
-                                class="w-[420px] max-w-[calc(100vw-2rem)] gap-0 overflow-hidden rounded-xl border border-slate-200 bg-white p-0 text-slate-900 shadow-2xl ring-0 dark:border-slate-200 dark:bg-white dark:text-slate-900"
+                                class="w-[300px] max-w-[calc(100vw-2rem)] gap-0 overflow-hidden rounded-xl border bg-popover p-0 text-popover-foreground shadow-xl"
                                 @click.stop
                                 @keydown.stop
                               >
-                                <div
-                                  class="border-b border-slate-200 bg-slate-50 px-3 py-2 text-center text-sm font-semibold text-slate-900"
-                                >
+                                <div class="border-b bg-muted/40 px-2 py-1.5 text-center text-xs font-semibold">
                                   {{ t("grid.localFilterFor", { column: col }) }}
                                 </div>
-                                <div class="flex items-center gap-2 border-b border-slate-200 px-3 py-2">
-                                  <Search class="h-4 w-4 shrink-0 text-slate-400" />
+                                <div class="flex items-center gap-1.5 border-b px-2 py-1.5">
+                                  <Search class="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
                                   <input
                                     v-model="localFilterSearch"
                                     autocapitalize="off"
                                     autocorrect="off"
                                     spellcheck="false"
-                                    class="h-8 min-w-0 flex-1 bg-transparent text-sm text-slate-900 outline-none placeholder:text-slate-400"
+                                    class="h-7 min-w-0 flex-1 bg-transparent text-xs outline-none placeholder:text-muted-foreground"
                                     :placeholder="t('grid.searchValues')"
                                   />
                                 </div>
                                 <div
-                                  class="grid grid-cols-[2rem_minmax(0,1fr)_4rem] border-b border-slate-200 bg-slate-50 px-3 py-1.5 text-xs font-medium text-slate-500"
+                                  class="grid grid-cols-[1.75rem_minmax(0,1fr)_3.5rem] border-b bg-muted/40 px-2 py-1 text-xs font-medium text-muted-foreground"
                                 >
                                   <button
                                     type="button"
-                                    class="flex h-5 w-5 items-center justify-center rounded border"
+                                    class="flex h-4 w-4 items-center justify-center rounded border"
                                     :class="
                                       localFilterAllVisibleSelected
                                         ? 'border-blue-600 bg-blue-600 text-white'
-                                        : 'border-slate-300 bg-white text-slate-700'
+                                        : 'border-border bg-background text-foreground/70'
                                     "
                                     @click="toggleAllLocalFilterOptions"
                                   >
-                                    <Check v-if="localFilterAllVisibleSelected" class="h-3.5 w-3.5 stroke-[3]" />
+                                    <Check v-if="localFilterAllVisibleSelected" class="h-3 w-3 stroke-[3]" />
                                   </button>
                                   <span>{{ t("grid.value") }}</span>
                                   <span class="text-right">{{ t("grid.count") }}</span>
                                 </div>
-                                <div class="max-h-72 overflow-auto py-1">
+                                <div class="max-h-72 overflow-auto py-0.5">
                                   <button
                                     v-for="option in localFilterOptions"
                                     :key="option.key"
                                     type="button"
-                                    class="grid w-full grid-cols-[2rem_minmax(0,1fr)_4rem] items-center px-3 py-1.5 text-left text-sm text-slate-900 hover:bg-sky-50"
+                                    class="grid w-full grid-cols-[1.75rem_minmax(0,1fr)_3.5rem] items-center px-2 py-1 text-left text-xs hover:bg-accent"
                                     @click="toggleLocalFilterValue(option.key)"
                                   >
                                     <span
-                                      class="flex h-5 w-5 items-center justify-center rounded border"
+                                      class="flex h-4 w-4 items-center justify-center rounded border"
                                       :class="
                                         localFilterDraft?.values.has(option.key)
                                           ? 'border-blue-600 bg-blue-600 text-white'
-                                          : 'border-slate-300 bg-white text-slate-700'
+                                          : 'border-border bg-background text-foreground/70'
                                       "
                                     >
                                       <Check
                                         v-if="localFilterDraft?.values.has(option.key)"
-                                        class="h-3.5 w-3.5 stroke-[3]"
+                                        class="h-3 w-3 stroke-[3]"
                                       />
                                     </span>
                                     <span
                                       class="truncate font-mono"
-                                      :class="{ 'italic text-slate-500': option.value === null }"
+                                      :class="{ 'italic text-muted-foreground': option.value === null }"
                                     >
                                       {{ option.label }}
                                     </span>
-                                    <span class="text-right tabular-nums text-slate-500">{{ option.count }}</span>
+                                    <span class="text-right tabular-nums text-muted-foreground text-xs">{{
+                                      option.count
+                                    }}</span>
                                   </button>
                                   <div
                                     v-if="localFilterAllOptions.length > localFilterOptions.length"
-                                    class="px-3 py-1 text-center text-[11px] text-slate-500"
+                                    class="px-2 py-0.5 text-center text-[10px] text-muted-foreground"
                                   >
                                     {{
                                       t("grid.moreValues", {
@@ -4031,28 +4031,26 @@ defineExpose({
                                   <button
                                     v-if="canApplyTypedLocalFilterValue"
                                     type="button"
-                                    class="grid w-full grid-cols-[2rem_minmax(0,1fr)] items-center px-3 py-2 text-left text-sm text-blue-700 hover:bg-sky-50"
+                                    class="grid w-full grid-cols-[1.75rem_minmax(0,1fr)] items-center px-2 py-1 text-left text-xs text-primary hover:bg-accent"
                                     @click="applyTypedLocalFilterValue"
                                   >
-                                    <Search class="h-4 w-4" />
+                                    <Search class="h-3.5 w-3.5" />
                                     <span class="truncate font-mono">
                                       {{ t("grid.filterTypedValue", { value: localFilterTypedValue }) }}
                                     </span>
                                   </button>
                                   <div
                                     v-if="localFilterOptions.length === 0 && !canApplyTypedLocalFilterValue"
-                                    class="px-3 py-8 text-center text-sm text-slate-500"
+                                    class="px-2 py-6 text-center text-xs text-muted-foreground"
                                   >
                                     {{ t("grid.noSearchResults") }}
                                   </div>
                                 </div>
-                                <div
-                                  class="flex items-center justify-between gap-2 border-t border-slate-200 bg-slate-50 px-3 py-2"
-                                >
+                                <div class="flex items-center justify-between gap-2 border-t bg-muted/40 px-2 py-1.5">
                                   <Button
                                     variant="ghost"
                                     size="sm"
-                                    class="h-7 px-2 text-xs text-slate-700 hover:bg-slate-100 hover:text-slate-900 dark:text-slate-700 dark:hover:bg-slate-100 dark:hover:text-slate-900"
+                                    class="h-7 px-2 text-xs"
                                     @click="clearLocalFilter(actualColumnIndex(colIdx))"
                                   >
                                     {{ t("grid.clearFilter") }}
@@ -4061,16 +4059,12 @@ defineExpose({
                                     <Button
                                       variant="outline"
                                       size="sm"
-                                      class="h-7 border-slate-300 bg-white px-2 text-xs text-slate-700 hover:bg-slate-100 hover:text-slate-900 dark:border-slate-300 dark:bg-white dark:text-slate-700 dark:hover:bg-slate-100 dark:hover:text-slate-900"
+                                      class="h-7 px-2 text-xs"
                                       @click="closeLocalFilter"
                                     >
                                       {{ t("dangerDialog.cancel") }}
                                     </Button>
-                                    <Button
-                                      size="sm"
-                                      class="h-7 bg-slate-950 px-2 text-xs text-white hover:bg-slate-800 dark:bg-slate-950 dark:text-white dark:hover:bg-slate-800"
-                                      @click="applyLocalFilter"
-                                    >
+                                    <Button size="sm" class="h-7 px-2 text-xs" @click="applyLocalFilter">
                                       {{ t("grid.applyFilter") }}
                                     </Button>
                                   </div>

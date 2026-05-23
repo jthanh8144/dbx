@@ -494,57 +494,57 @@ defineExpose({ focusSearch, refreshData });
             </PopoverTrigger>
             <PopoverContent
               align="end"
-              class="w-72 max-w-[calc(100vw-2rem)] gap-0 overflow-hidden rounded-xl border bg-popover p-0 text-popover-foreground shadow-xl"
+              class="w-64 max-w-[calc(100vw-2rem)] gap-0 overflow-hidden rounded-xl border bg-popover p-0 text-popover-foreground shadow-xl"
               @click.stop
               @keydown.stop
             >
-              <div class="border-b bg-muted/40 px-3 py-2">
+              <div class="border-b bg-muted/40 px-2 py-1.5">
                 <div class="flex items-center justify-between gap-2">
-                  <div class="text-sm font-semibold">{{ t("grid.columnVisibility") }}</div>
-                  <div class="text-[11px] text-muted-foreground tabular-nums">
+                  <div class="text-xs font-semibold">{{ t("grid.columnVisibility") }}</div>
+                  <div class="text-[10px] text-muted-foreground tabular-nums">
                     {{ dataGridRef?.visibleColumnCount ?? 0 }}/{{ dataGridRef?.displayableColumnCount ?? 0 }}
                   </div>
                 </div>
               </div>
-              <div class="flex items-center gap-2 border-b px-3 py-2">
-                <Search class="h-4 w-4 shrink-0 text-muted-foreground" />
+              <div class="flex items-center gap-1.5 border-b px-2 py-1.5">
+                <Search class="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
                 <input
                   v-model="columnVisibilitySearch"
                   autocapitalize="off"
                   autocorrect="off"
                   spellcheck="false"
-                  class="h-7 min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground"
+                  class="h-6 min-w-0 flex-1 bg-transparent text-xs outline-none placeholder:text-muted-foreground"
                   :placeholder="t('grid.searchColumns')"
                 />
               </div>
-              <div class="max-h-72 overflow-auto py-1">
+              <div class="max-h-72 overflow-auto py-0.5">
                 <button
                   v-for="option in columnVisibilityOptions"
                   :key="`${option.index}:${option.column}`"
                   type="button"
-                  class="grid w-full grid-cols-[1.75rem_minmax(0,1fr)] items-center px-3 py-1.5 text-left text-sm hover:bg-accent"
+                  class="grid w-full grid-cols-[1.5rem_minmax(0,1fr)] items-center px-2 py-1 text-left text-xs hover:bg-accent"
                   @click="dataGridRef?.toggleColumnVisibility(option.index)"
                 >
                   <span
-                    class="flex h-5 w-5 items-center justify-center rounded border"
+                    class="flex h-4 w-4 items-center justify-center rounded border"
                     :class="
                       dataGridRef?.isColumnVisible(option.index)
                         ? 'border-primary bg-primary text-primary-foreground'
                         : 'border-border bg-background text-transparent'
                     "
                   >
-                    <Check class="h-3.5 w-3.5 stroke-[3]" />
+                    <Check class="h-3 w-3 stroke-[3]" />
                   </span>
                   <span class="truncate font-mono text-xs" :title="option.column">{{ option.column }}</span>
                 </button>
                 <div
                   v-if="columnVisibilityOptions.length === 0"
-                  class="px-3 py-8 text-center text-sm text-muted-foreground"
+                  class="px-2 py-6 text-center text-xs text-muted-foreground"
                 >
                   {{ t("grid.noSearchResults") }}
                 </div>
               </div>
-              <div class="flex items-center justify-between gap-2 border-t bg-muted/30 px-3 py-2">
+              <div class="flex items-center justify-between gap-2 border-t bg-muted/30 px-2 py-1.5">
                 <span class="text-[11px] text-muted-foreground">{{ t("grid.columnVisibilityHint") }}</span>
                 <div class="flex items-center gap-1">
                   <Button
