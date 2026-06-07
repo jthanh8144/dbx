@@ -6,7 +6,7 @@ use tokio::sync::RwLock;
 
 use crate::models::connection::DatabaseType;
 use crate::sql_dialect::{qualified_table_name, quote_table_identifier};
-use crate::transfer::format_pg_array_sql_literal;
+use crate::transfer::{format_ch_array_sql_literal, format_pg_array_sql_literal};
 
 static EXPORT_CANCELLED: std::sync::LazyLock<RwLock<HashSet<String>>> =
     std::sync::LazyLock::new(|| RwLock::new(HashSet::new()));
@@ -145,6 +145,11 @@ fn format_export_sql_literal_typed(
 ) -> String {
     if matches!(database_type, Some(DatabaseType::Mysql)) && column_type.is_some_and(is_mysql_bit_type) {
         return format_mysql_bit_literal(value);
+    }
+    if let Some(arr) = value.as_array() {
+        if matches!(database_type, Some(DatabaseType::ClickHouse) | Some(DatabaseType::Databend)) {
+            return format_ch_array_sql_literal(arr);
+        }
     }
     format_export_sql_literal(value)
 }
