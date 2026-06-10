@@ -108,14 +108,16 @@ export function useFileDrop() {
       document.addEventListener("drop", (event: DragEvent) => {
         const files = event.dataTransfer?.files;
         if (!files || files.length === 0) return;
+        event.preventDefault();
         for (let i = 0; i < files.length; i++) {
           const file = files[i];
           if (!isSqlFilePath(file.name)) continue;
-          event.preventDefault();
           const reader = new FileReader();
           reader.onload = () => {
             if (typeof reader.result === "string") {
-              void openDroppedSqlFile(file.name, reader.result);
+              openDroppedSqlFile(file.name, reader.result).catch((e: any) => {
+                toast(t("toolbar.sqlOpenFailed", { message: e?.message || String(e) }), 5000);
+              });
             }
           };
           reader.readAsText(file);
