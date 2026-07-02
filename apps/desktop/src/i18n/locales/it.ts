@@ -814,6 +814,7 @@ export default withEnglishFallback({
     copyColumnTsv: "Copia Colonna (TSV)",
     editValue: "Modifica Valore",
     formatJson: "Formatta JSON",
+    compactJson: "Compatta JSON",
     formattedJsonEditWarning: "Stai modificando JSON formattato. Salvando verrà scritto come JSON, quindi la formattazione originale potrebbe cambiare.",
     setNull: "Imposta NULL",
     restoreOriginalValue: "Ripristina Originale",
