@@ -160,13 +160,16 @@ describe("queryStore database open state", () => {
     storage.set(ACTIVE_TAB_STORAGE_KEY, "tab-1");
     setActivePinia(createPinia());
 
+    const { useSettingsStore } = await import("@/stores/settingsStore");
     const { useQueryStore } = await import("@/stores/queryStore");
+    await useSettingsStore().initEditorSettings();
     const store = useQueryStore();
+    await store.initOpenTabs();
 
     expect(store.tabs).toEqual([]);
     expect(store.activeTabId).toBeNull();
-    expect(storage.get(OPEN_TABS_STORAGE_KEY)).toBe(persistedTabs);
-    expect(storage.get(ACTIVE_TAB_STORAGE_KEY)).toBe("tab-1");
+    expect(storage.get(OPEN_TABS_STORAGE_KEY)).toBeUndefined();
+    expect(storage.get(ACTIVE_TAB_STORAGE_KEY)).toBeUndefined();
   });
 
   it("restores only pinned tabs when launch restore mode is pinned", async () => {
@@ -196,8 +199,11 @@ describe("queryStore database open state", () => {
     storage.set(ACTIVE_TAB_STORAGE_KEY, "tab-2");
     setActivePinia(createPinia());
 
+    const { useSettingsStore } = await import("@/stores/settingsStore");
     const { useQueryStore } = await import("@/stores/queryStore");
+    await useSettingsStore().initEditorSettings();
     const store = useQueryStore();
+    await store.initOpenTabs();
 
     expect(store.tabs.map((tab) => tab.id)).toEqual(["tab-1"]);
     expect(store.activeTabId).toBe("tab-1");

@@ -7,7 +7,7 @@ import { orderPinnedFirst } from "@/lib/app/pinnedItems";
 import { canCancelQueryExecution } from "@/lib/sql/queryExecutionState";
 import { buildExplainSql, parseExplainResult, parseDamengExplainText } from "@/lib/diagram/explainPlan";
 import { allEditableColumnsWriteable, allPrimaryKeysPresent, analyzeEditableQuery, sourceColumnsForResult, type EditableQueryInfo } from "@/lib/sql/sqlAnalysis";
-import { ACTIVE_TAB_STORAGE_KEY, OPEN_TABS_STORAGE_KEY, restoreOpenTabsState, serializeOpenTabs } from "@/lib/app/openTabsPersistence";
+import { ACTIVE_TAB_STORAGE_KEY, OPEN_TABS_STORAGE_KEY, restoreOpenTabsPayload, restoreOpenTabsState, serializeOpenTabs } from "@/lib/app/openTabsPersistence";
 import {
   evaluateMongoAggregateSafety,
   evaluateMongoWriteSafety,
@@ -44,7 +44,8 @@ import * as api from "@/lib/backend/api";
 import { useConnectionStore } from "@/stores/connectionStore";
 import { useSettingsStore } from "@/stores/settingsStore";
 import { useSavedSqlStore } from "@/stores/savedSqlStore";
-import { createSavedSqlEditorPosition, restoreSavedSqlEditorPosition, saveSavedSqlEditorPosition } from "@/lib/app/savedSqlEditorPosition";
+import { createSavedSqlEditorPosition, initSavedSqlEditorPositions, restoreSavedSqlEditorPosition, saveSavedSqlEditorPosition } from "@/lib/app/savedSqlEditorPosition";
+import { safeLocalStorageGet, safeLocalStorageRemove } from "@/lib/backend/safeStorage";
 import type { SavedSqlFile } from "@/types/database";
 
 const ORACLE_LIKE_METADATA_TYPES = new Set<string>(["oracle", "dameng", "oceanbase-oracle"]);
@@ -179,25 +180,41 @@ function normalizeOracleLikeQueryAnalysis(dbType: string, analysis: EditableQuer
   };
 }
 
-function saveTabs(tabs: QueryTab[], activeTabId: string | null) {
-  try {
-    localStorage.setItem(OPEN_TABS_STORAGE_KEY, JSON.stringify(serializeOpenTabs(tabs)));
-    localStorage.setItem(ACTIVE_TAB_STORAGE_KEY, activeTabId || "");
-  } catch {}
+let saveTabsQueue = Promise.resolve();
+
+function saveTabs(tabs: QueryTab[], activeTabId: string | null): Promise<void> {
+  const payload = { tabs: serializeOpenTabs(tabs), activeTabId };
+  saveTabsQueue = saveTabsQueue.catch(() => undefined).then(() => api.saveOpenTabsState(payload));
+  return saveTabsQueue;
 }
 
-function loadSavedTabs(): { tabs: QueryTab[]; activeTabId: string | null } {
-  try {
-    const restoreMode = useSettingsStore().editorSettings.openTabsRestoreMode;
-    if (restoreMode === "none") {
-      return { tabs: [], activeTabId: null };
-    }
-    return restoreOpenTabsState(localStorage.getItem(OPEN_TABS_STORAGE_KEY), localStorage.getItem(ACTIVE_TAB_STORAGE_KEY), {
-      filter: restoreMode === "pinned" ? "pinned" : "all",
-    });
-  } catch {
-    return { tabs: [], activeTabId: null };
-  }
+function loadLegacySavedTabs(): { rawTabs: string | null; rawActiveTabId: string | null } {
+  return {
+    rawTabs: safeLocalStorageGet(OPEN_TABS_STORAGE_KEY),
+    rawActiveTabId: safeLocalStorageGet(ACTIVE_TAB_STORAGE_KEY),
+  };
+}
+
+function clearLegacySavedTabs() {
+  safeLocalStorageRemove(OPEN_TABS_STORAGE_KEY);
+  safeLocalStorageRemove(ACTIVE_TAB_STORAGE_KEY);
+}
+
+function restoreSavedTabsFromPayload(payload: { tabs?: unknown; activeTabId?: unknown } | null | undefined): { tabs: QueryTab[]; activeTabId: string | null } {
+  const restoreMode = useSettingsStore().editorSettings.openTabsRestoreMode;
+  if (restoreMode === "none") return { tabs: [], activeTabId: null };
+  return restoreOpenTabsPayload(payload, {
+    filter: restoreMode === "pinned" ? "pinned" : "all",
+  });
+}
+
+function restoreLegacySavedTabs(): { tabs: QueryTab[]; activeTabId: string | null } {
+  const restoreMode = useSettingsStore().editorSettings.openTabsRestoreMode;
+  if (restoreMode === "none") return { tabs: [], activeTabId: null };
+  const legacy = loadLegacySavedTabs();
+  return restoreOpenTabsState(legacy.rawTabs, legacy.rawActiveTabId, {
+    filter: restoreMode === "pinned" ? "pinned" : "all",
+  });
 }
 
 function getI18nT() {
@@ -210,19 +227,16 @@ function getI18nT() {
 
 export const useQueryStore = defineStore("query", () => {
   const t = getI18nT();
-  const restored = loadSavedTabs();
-  const tabs = ref<QueryTab[]>(restored.tabs);
-  const activeTabId = ref<string | null>(restored.activeTabId);
-  const activeTabHistory = ref<string[]>(restored.activeTabId ? [restored.activeTabId] : []);
+  const tabs = ref<QueryTab[]>([]);
+  const activeTabId = ref<string | null>(null);
+  const isOpenTabsLoaded = ref(false);
+  const activeTabHistory = ref<string[]>([]);
   const showCloseConfirm = ref(false);
   const pendingCloseTabId = ref<string | null>(null);
   const pendingBatchCloseTabIds = ref<string[] | null>(null);
   const pendingBatchCloseFinalActiveTabId = ref<string | null | undefined>(undefined);
   const isConfirmingAppClose = ref(false);
   const closeConfirmContext = ref<CloseConfirmContext>("tab");
-  for (const tab of restored.tabs) {
-    if (tab.mode === "data") void deleteTabResultSnapshot(tabResultCacheKey(tab.id));
-  }
   const tableStructureRefreshVersions = ref<Record<string, number>>({});
   const savedSqlEditorPositionTimers = new Map<string, ReturnType<typeof setTimeout>>();
 
@@ -569,6 +583,41 @@ export const useQueryStore = defineStore("query", () => {
     clearResultPayload(tab, { evicted: true });
   }
 
+  function applyRestoredOpenTabs(restored: { tabs: QueryTab[]; activeTabId: string | null }) {
+    tabs.value = restored.tabs;
+    activeTabId.value = restored.activeTabId;
+    activeTabHistory.value = restored.activeTabId ? [restored.activeTabId] : [];
+    for (const tab of restored.tabs) {
+      if (tab.mode === "data") void deleteTabResultSnapshot(tabResultCacheKey(tab.id));
+    }
+  }
+
+  async function initOpenTabs() {
+    if (isOpenTabsLoaded.value) return;
+    const saved = await api.loadOpenTabsState().catch(() => null);
+    if (saved?.tabs && Array.isArray(saved.tabs)) {
+      const restored = restoreSavedTabsFromPayload(saved);
+      applyRestoredOpenTabs(restored);
+      isOpenTabsLoaded.value = true;
+      return;
+    }
+
+    const legacy = loadLegacySavedTabs();
+    if (legacy.rawTabs || legacy.rawActiveTabId) {
+      const restored = restoreLegacySavedTabs();
+      applyRestoredOpenTabs(restored);
+      try {
+        await saveTabs(tabs.value, activeTabId.value);
+        // Keep old desktop installs readable until the async store has the
+        // migrated state; only then remove the synchronous startup payload.
+        clearLegacySavedTabs();
+      } catch {
+        /* keep legacy values for a later migration attempt */
+      }
+    }
+    isOpenTabsLoaded.value = true;
+  }
+
   const _persistSnapshot = computed(() =>
     tabs.value.map((t) => ({
       id: t.id,
@@ -609,7 +658,7 @@ export const useQueryStore = defineStore("query", () => {
     () => {
       if (_persistTimer) clearTimeout(_persistTimer);
       _persistTimer = setTimeout(() => {
-        saveTabs(tabs.value, activeTabId.value);
+        void saveTabs(tabs.value, activeTabId.value).catch(() => {});
         _persistTimer = null;
       }, 300);
     },
@@ -620,12 +669,12 @@ export const useQueryStore = defineStore("query", () => {
   // reflects the latest in-memory tabs without waiting for the 300ms debounce.
   // Lets callers (e.g. tests that reload the store) read back persisted state
   // deterministically instead of racing the debounce timer.
-  function flushPendingPersist() {
+  function flushPendingPersist(): Promise<void> {
     if (_persistTimer) {
       clearTimeout(_persistTimer);
       _persistTimer = null;
     }
-    saveTabs(tabs.value, activeTabId.value);
+    return saveTabs(tabs.value, activeTabId.value);
   }
 
   function findTabByIdentity(connectionId: string, database: string, title: string, mode: QueryTab["mode"], schema?: string) {
@@ -1473,6 +1522,7 @@ export const useQueryStore = defineStore("query", () => {
   }
 
   async function hydrateSavedSqlTabs() {
+    await initSavedSqlEditorPositions();
     const savedSqlStore = useSavedSqlStore();
     const linkedTabs = tabs.value.filter((tab) => tab.savedSqlId && tab.sql === "");
     for (const tab of linkedTabs) {
@@ -2921,6 +2971,8 @@ export const useQueryStore = defineStore("query", () => {
   return {
     tabs,
     activeTabId,
+    isOpenTabsLoaded,
+    initOpenTabs,
     showCloseConfirm,
     pendingCloseTabId,
     closeConfirmContext,

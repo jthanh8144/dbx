@@ -76,6 +76,7 @@ import { safeLocalStorageGet, safeLocalStorageSet } from "@/lib/backend/safeStor
 import { apiUrl, webPath } from "@/lib/common/webPath";
 import { APP_FONT_SANS_CSS_VAR, DEFAULT_UI_FONT_FAMILY } from "@/lib/app/appFonts";
 import { rankSavedSqlHistory } from "@/lib/savedSql/savedSqlHistory";
+import { initSavedSqlEditorPositions } from "@/lib/app/savedSqlEditorPosition";
 import { isSchemaAware, isSingleDatabase, usesTreeSchemaMode } from "@/lib/database/databaseFeatureSupport";
 import { codeMirrorSqlDialect, connectionUsesDatabaseObjectTreeMode, effectiveDatabaseTypeForConnection } from "@/lib/database/jdbcDialect";
 import { detectDatabaseFileType } from "@/lib/database/databaseFileDetection";
@@ -562,8 +563,10 @@ function finishPendingAppClose(action: AppCloseAction) {
   }
   pendingAppCloseAction.value = null;
   pendingSaveShouldCloseTab.value = true;
-  queryStore.flushPendingPersist();
-  void performCloseAction(action);
+  void queryStore
+    .flushPendingPersist()
+    .catch(() => {})
+    .finally(() => performCloseAction(action));
 }
 
 function continuePendingAppCloseAfterSave() {
@@ -1529,35 +1532,35 @@ function onLoginSuccess() {
   setupRequired.value = false;
   needsAuth.value = true;
   window.history.replaceState(null, "", webPath("/"));
-  initApp();
+  void initApp();
 }
 
-function initApp() {
+async function initApp() {
   const t0 = performance.now();
   console.log("[STARTUP] initApp begin");
-  settingsStore
-    .initDesktopSettings()
-    .catch(() => {})
-    .then(() => {
-      void savedSqlStore
-        .initFromStorage()
-        .then(() => {
-          console.log(`[STARTUP]   savedSqlStore.initFromStorage: ${(performance.now() - t0).toFixed(0)}ms`);
-          void queryStore.hydrateSavedSqlTabs();
-        })
-        .catch((e: any) => {
-          toast(t("connection.loadFailed", { message: e?.message || String(e) }), 5000);
-        });
-      return connectionStore.initFromDisk();
-    })
-    .then(() => {
-      console.log(`[STARTUP]   connectionStore.initFromDisk: ${(performance.now() - t0).toFixed(0)}ms`);
-      restoreActiveConnectionContext();
-    })
-    .catch((e: any) => {
-      toast(t("connection.loadFailed", { message: e?.message || String(e) }), 5000);
-    });
   settingsStore.initAiConfig();
+  try {
+    await settingsStore.initEditorSettings();
+    console.log(`[STARTUP]   settingsStore.initEditorSettings: ${(performance.now() - t0).toFixed(0)}ms`);
+    await queryStore.initOpenTabs();
+    console.log(`[STARTUP]   queryStore.initOpenTabs: ${(performance.now() - t0).toFixed(0)}ms`);
+    await settingsStore.initDesktopSettings().catch(() => {});
+
+    void Promise.all([initSavedSqlEditorPositions(), savedSqlStore.initFromStorage()])
+      .then(() => {
+        console.log(`[STARTUP]   savedSqlStore.initFromStorage: ${(performance.now() - t0).toFixed(0)}ms`);
+        void queryStore.hydrateSavedSqlTabs();
+      })
+      .catch((e: any) => {
+        toast(t("connection.loadFailed", { message: e?.message || String(e) }), 5000);
+      });
+
+    await connectionStore.initFromDisk();
+    console.log(`[STARTUP]   connectionStore.initFromDisk: ${(performance.now() - t0).toFixed(0)}ms`);
+    restoreActiveConnectionContext();
+  } catch (e: any) {
+    toast(t("connection.loadFailed", { message: e?.message || String(e) }), 5000);
+  }
 }
 
 function restoreActiveConnectionContext() {
@@ -1662,7 +1665,7 @@ onMounted(async () => {
     if (needsAuth.value && !authenticated.value) {
       history.replaceState(null, "", webPath("/login"));
     }
-    if (!setupRequired.value && (!needsAuth.value || authenticated.value)) initApp();
+    if (!setupRequired.value && (!needsAuth.value || authenticated.value)) void initApp();
     api
       .getAppVersion()
       .then((v) => {
@@ -1671,7 +1674,7 @@ onMounted(async () => {
       .catch(() => {});
     return;
   }
-  initApp();
+  void initApp();
   setupFileDrop().catch(() => {});
   setTimeout(() => {
     runUpdateNotificationChecks();

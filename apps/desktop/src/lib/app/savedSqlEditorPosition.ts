@@ -1,3 +1,6 @@
+import * as api from "@/lib/backend/api";
+import { safeLocalStorageGet, safeLocalStorageRemove } from "@/lib/backend/safeStorage";
+
 export const SAVED_SQL_EDITOR_POSITIONS_STORAGE_KEY = "dbx-saved-sql-editor-positions";
 
 const MAX_SAVED_SQL_EDITOR_POSITIONS = 200;
@@ -83,44 +86,82 @@ function restoredHeadFromAnchor(position: SavedSqlEditorPosition, sql: string): 
   return targetHead;
 }
 
-function parseSavedPositions(raw: string | null): SavedSqlEditorPosition[] {
+function normalizeSavedPositions(value: unknown): SavedSqlEditorPosition[] {
+  if (!Array.isArray(value)) return [];
+  return value.filter((item): item is SavedSqlEditorPosition => {
+    return (
+      !!item &&
+      typeof item === "object" &&
+      typeof item.savedSqlId === "string" &&
+      !!item.selection &&
+      typeof item.selection.anchor === "number" &&
+      typeof item.selection.head === "number" &&
+      !!item.anchor &&
+      typeof item.anchor.before === "string" &&
+      typeof item.anchor.after === "string" &&
+      typeof item.anchor.head === "number" &&
+      typeof item.anchor.docLength === "number" &&
+      typeof item.updatedAt === "number"
+    );
+  });
+}
+
+function parseLegacySavedPositions(): SavedSqlEditorPosition[] {
+  const raw = safeLocalStorageGet(SAVED_SQL_EDITOR_POSITIONS_STORAGE_KEY);
   if (!raw) return [];
   try {
-    const parsed = JSON.parse(raw);
-    if (!Array.isArray(parsed)) return [];
-    return parsed.filter((item): item is SavedSqlEditorPosition => {
-      return (
-        !!item &&
-        typeof item === "object" &&
-        typeof item.savedSqlId === "string" &&
-        !!item.selection &&
-        typeof item.selection.anchor === "number" &&
-        typeof item.selection.head === "number" &&
-        !!item.anchor &&
-        typeof item.anchor.before === "string" &&
-        typeof item.anchor.after === "string" &&
-        typeof item.anchor.head === "number" &&
-        typeof item.anchor.docLength === "number" &&
-        typeof item.updatedAt === "number"
-      );
-    });
+    return normalizeSavedPositions(JSON.parse(raw));
   } catch {
     return [];
   }
+}
+
+let savedPositions: SavedSqlEditorPosition[] = [];
+let savedPositionsLoaded = false;
+let savedPositionsInitPromise: Promise<void> | undefined;
+
+export async function initSavedSqlEditorPositions() {
+  if (savedPositionsLoaded) return;
+  if (savedPositionsInitPromise) return savedPositionsInitPromise;
+
+  savedPositionsInitPromise = (async () => {
+    const storedValue = await api.loadSavedSqlEditorPositions().catch(() => null);
+    if (Array.isArray(storedValue)) {
+      savedPositions = normalizeSavedPositions(storedValue);
+      return;
+    }
+
+    const legacy = parseLegacySavedPositions();
+    if (legacy.length > 0) {
+      savedPositions = legacy;
+      try {
+        await api.saveSavedSqlEditorPositions(trimSavedPositions(legacy));
+        // Remove the synchronous startup payload only after the async store
+        // accepts the migrated positions.
+        safeLocalStorageRemove(SAVED_SQL_EDITOR_POSITIONS_STORAGE_KEY);
+      } catch {
+        /* keep legacy values for a later migration attempt */
+      }
+    }
+  })().finally(() => {
+    savedPositionsLoaded = true;
+    savedPositionsInitPromise = undefined;
+  });
+
+  return savedPositionsInitPromise;
 }
 
 function readSavedPositions(): SavedSqlEditorPosition[] {
-  try {
-    return parseSavedPositions(localStorage.getItem(SAVED_SQL_EDITOR_POSITIONS_STORAGE_KEY));
-  } catch {
-    return [];
-  }
+  return savedPositions;
+}
+
+function trimSavedPositions(positions: SavedSqlEditorPosition[]) {
+  return [...positions].sort((a, b) => b.updatedAt - a.updatedAt).slice(0, MAX_SAVED_SQL_EDITOR_POSITIONS);
 }
 
 function writeSavedPositions(positions: SavedSqlEditorPosition[]) {
-  try {
-    localStorage.setItem(SAVED_SQL_EDITOR_POSITIONS_STORAGE_KEY, JSON.stringify([...positions].sort((a, b) => b.updatedAt - a.updatedAt).slice(0, MAX_SAVED_SQL_EDITOR_POSITIONS)));
-  } catch {}
+  savedPositions = trimSavedPositions(positions);
+  void api.saveSavedSqlEditorPositions(savedPositions).catch(() => {});
 }
 
 export function createSavedSqlEditorPosition(input: { savedSqlId: string; sql: string; selection?: SavedSqlEditorSelection; viewport?: SavedSqlEditorViewport; now?: number }): SavedSqlEditorPosition {
@@ -165,4 +206,10 @@ export function restoreSavedSqlEditorPosition(savedSqlId: string, sql: string): 
 
 export function forgetSavedSqlEditorPosition(savedSqlId: string) {
   writeSavedPositions(readSavedPositions().filter((item) => item.savedSqlId !== savedSqlId));
+}
+
+export function __resetSavedSqlEditorPositionsForTests(positions: SavedSqlEditorPosition[] = []) {
+  savedPositions = trimSavedPositions(positions);
+  savedPositionsLoaded = true;
+  savedPositionsInitPromise = undefined;
 }

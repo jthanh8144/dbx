@@ -20,6 +20,9 @@ use crate::saved_sql::{SavedSqlFile, SavedSqlFolder, SavedSqlLibrary};
 const SSH_TUNNEL_SECRET_PREFIX: &str = "ssh_tunnels.";
 const TRANSPORT_LAYER_SECRET_PREFIX: &str = "transport_layers.";
 const STORAGE_DB_FILE_NAME: &str = "dbx.db";
+const APP_STATE_EDITOR_SETTINGS_KEY: &str = "editor_settings";
+const APP_STATE_OPEN_TABS_KEY: &str = "open_tabs";
+const APP_STATE_SAVED_SQL_EDITOR_POSITIONS_KEY: &str = "saved_sql_editor_positions";
 const USER_DATA_TABLES: &[&str] = &[
     "connections",
     "connection_secrets",
@@ -222,6 +225,10 @@ const SCHEMA_STATEMENTS: &[&str] = &[
     "CREATE TABLE IF NOT EXISTS app_settings (
         id INTEGER PRIMARY KEY CHECK (id = 1),
         settings_json TEXT NOT NULL
+    )",
+    "CREATE TABLE IF NOT EXISTS app_state (
+        key TEXT PRIMARY KEY,
+        value_json TEXT NOT NULL
     )",
     "CREATE TABLE IF NOT EXISTS schema_cache (
         cache_key TEXT PRIMARY KEY,
@@ -916,6 +923,53 @@ impl Storage {
             return Ok(Vec::new());
         };
         Ok(array.iter().filter_map(|item| item.as_str().map(|value| value.to_string())).collect())
+    }
+
+    async fn save_app_state_value(&self, key: &str, value: &serde_json::Value) -> Result<(), String> {
+        let key = key.to_string();
+        let value_json = serde_json::to_string(value).map_err(|e| e.to_string())?;
+        self.with_conn(move |conn| {
+            conn.execute("INSERT OR REPLACE INTO app_state (key, value_json) VALUES (?1, ?2)", params![key, value_json])
+                .map(|_| ())
+                .map_err(|e| e.to_string())
+        })
+        .await
+    }
+
+    async fn load_app_state_value(&self, key: &str) -> Result<Option<serde_json::Value>, String> {
+        let key = key.to_string();
+        let json: Option<String> = self
+            .with_conn(move |conn| {
+                conn.query_row("SELECT value_json FROM app_state WHERE key = ?1", [key], |row| row.get(0))
+                    .optional()
+                    .map_err(|e| e.to_string())
+            })
+            .await?;
+        json.map(|value| serde_json::from_str(&value).map_err(|e| e.to_string())).transpose()
+    }
+
+    pub async fn save_editor_settings(&self, settings: &serde_json::Value) -> Result<(), String> {
+        self.save_app_state_value(APP_STATE_EDITOR_SETTINGS_KEY, settings).await
+    }
+
+    pub async fn load_editor_settings(&self) -> Result<Option<serde_json::Value>, String> {
+        self.load_app_state_value(APP_STATE_EDITOR_SETTINGS_KEY).await
+    }
+
+    pub async fn save_open_tabs_state(&self, state: &serde_json::Value) -> Result<(), String> {
+        self.save_app_state_value(APP_STATE_OPEN_TABS_KEY, state).await
+    }
+
+    pub async fn load_open_tabs_state(&self) -> Result<Option<serde_json::Value>, String> {
+        self.load_app_state_value(APP_STATE_OPEN_TABS_KEY).await
+    }
+
+    pub async fn save_saved_sql_editor_positions(&self, positions: &serde_json::Value) -> Result<(), String> {
+        self.save_app_state_value(APP_STATE_SAVED_SQL_EDITOR_POSITIONS_KEY, positions).await
+    }
+
+    pub async fn load_saved_sql_editor_positions(&self) -> Result<Option<serde_json::Value>, String> {
+        self.load_app_state_value(APP_STATE_SAVED_SQL_EDITOR_POSITIONS_KEY).await
     }
 
     pub async fn load_or_create_local_device_secret(&self) -> Result<String, String> {
@@ -2865,6 +2919,53 @@ mod tests {
             vec!["conn-1".to_string(), "conn-1:db:main".to_string()]
         );
         assert_eq!(storage.load_password_hash().await.unwrap(), Some("hash-3".to_string()));
+    }
+
+    #[tokio::test]
+    async fn app_state_roundtrips_without_polluting_app_settings() {
+        let path = temp_db_path("app-state-roundtrip");
+        let storage = Storage::open(&path).await.unwrap();
+
+        storage.save_password_hash("hash-4").await.unwrap();
+        storage
+            .save_desktop_settings(&DesktopSettings {
+                icon_theme: DesktopIconTheme::Black,
+                ..DesktopSettings::default()
+            })
+            .await
+            .unwrap();
+
+        storage.save_editor_settings(&serde_json::json!({ "openTabsRestoreMode": "pinned" })).await.unwrap();
+        storage
+            .save_open_tabs_state(&serde_json::json!({
+                "tabs": [{ "id": "tab-1", "title": "Pinned", "connectionId": "pg", "database": "app", "sql": "select 1", "pinned": true }],
+                "activeTabId": "tab-1"
+            }))
+            .await
+            .unwrap();
+        storage
+            .save_saved_sql_editor_positions(&serde_json::json!([{ "savedSqlId": "file-1", "updatedAt": 1 }]))
+            .await
+            .unwrap();
+
+        assert_eq!(
+            storage.load_editor_settings().await.unwrap(),
+            Some(serde_json::json!({ "openTabsRestoreMode": "pinned" }))
+        );
+        assert_eq!(
+            storage.load_open_tabs_state().await.unwrap().and_then(|value| value.get("activeTabId").cloned()),
+            Some(serde_json::json!("tab-1"))
+        );
+        assert_eq!(
+            storage.load_saved_sql_editor_positions().await.unwrap(),
+            Some(serde_json::json!([{ "savedSqlId": "file-1", "updatedAt": 1 }]))
+        );
+        assert_eq!(storage.load_password_hash().await.unwrap(), Some("hash-4".to_string()));
+        assert_eq!(
+            storage.load_desktop_settings().await.unwrap(),
+            DesktopSettings { icon_theme: DesktopIconTheme::Black, ..DesktopSettings::default() }
+        );
+        assert_eq!(storage.load_app_settings_json().await.unwrap().get("open_tabs"), None);
     }
 
     #[tokio::test]

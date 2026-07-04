@@ -1,10 +1,16 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { createSavedSqlEditorPosition, forgetSavedSqlEditorPosition, restoreSavedSqlEditorPosition, saveSavedSqlEditorPosition, SAVED_SQL_EDITOR_POSITIONS_STORAGE_KEY } from "../app/savedSqlEditorPosition";
+import { __resetSavedSqlEditorPositionsForTests, createSavedSqlEditorPosition, forgetSavedSqlEditorPosition, restoreSavedSqlEditorPosition, saveSavedSqlEditorPosition } from "../app/savedSqlEditorPosition";
+
+vi.mock("@/lib/backend/api", () => ({
+  loadSavedSqlEditorPositions: vi.fn().mockResolvedValue(null),
+  saveSavedSqlEditorPositions: vi.fn().mockResolvedValue(undefined),
+}));
 
 const storage = new Map<string, string>();
 
 beforeEach(() => {
   storage.clear();
+  __resetSavedSqlEditorPositionsForTests();
   vi.stubGlobal("localStorage", {
     getItem: (key: string) => storage.get(key) ?? null,
     setItem: (key: string, value: string) => storage.set(key, value),
@@ -100,10 +106,7 @@ describe("savedSqlEditorPosition", () => {
       );
     }
 
-    const stored = JSON.parse(storage.get(SAVED_SQL_EDITOR_POSITIONS_STORAGE_KEY) ?? "[]") as Array<{ savedSqlId: string }>;
-
-    expect(stored).toHaveLength(200);
-    expect(stored.some((item) => item.savedSqlId === "file-0")).toBe(false);
-    expect(stored[0]?.savedSqlId).toBe("file-204");
+    expect(restoreSavedSqlEditorPosition("file-0", "select 1;")).toEqual({});
+    expect(restoreSavedSqlEditorPosition("file-204", "select 1;").selection).toEqual({ anchor: 0, head: 0 });
   });
 });

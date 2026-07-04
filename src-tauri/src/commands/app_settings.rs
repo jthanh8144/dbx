@@ -76,6 +76,41 @@ pub async fn save_pinned_tree_node_ids(state: State<'_, Arc<AppState>>, ids: Vec
 }
 
 #[tauri::command]
+pub async fn load_editor_settings(state: State<'_, Arc<AppState>>) -> Result<Option<serde_json::Value>, String> {
+    state.storage.load_editor_settings().await
+}
+
+#[tauri::command]
+pub async fn save_editor_settings(state: State<'_, Arc<AppState>>, settings: serde_json::Value) -> Result<(), String> {
+    state.storage.save_editor_settings(&settings).await
+}
+
+#[tauri::command]
+pub async fn load_open_tabs_state(state: State<'_, Arc<AppState>>) -> Result<Option<serde_json::Value>, String> {
+    state.storage.load_open_tabs_state().await
+}
+
+#[tauri::command]
+pub async fn save_open_tabs_state(state: State<'_, Arc<AppState>>, payload: serde_json::Value) -> Result<(), String> {
+    state.storage.save_open_tabs_state(&payload).await
+}
+
+#[tauri::command]
+pub async fn load_saved_sql_editor_positions(
+    state: State<'_, Arc<AppState>>,
+) -> Result<Option<serde_json::Value>, String> {
+    state.storage.load_saved_sql_editor_positions().await
+}
+
+#[tauri::command]
+pub async fn save_saved_sql_editor_positions(
+    state: State<'_, Arc<AppState>>,
+    positions: serde_json::Value,
+) -> Result<(), String> {
+    state.storage.save_saved_sql_editor_positions(&positions).await
+}
+
+#[tauri::command]
 pub async fn load_native_debug_logs(app: AppHandle) -> Result<String, String> {
     let log_dir = app.path().app_log_dir().map_err(|e| e.to_string())?;
     tauri::async_runtime::spawn_blocking(move || load_native_debug_logs_from_dir(log_dir))

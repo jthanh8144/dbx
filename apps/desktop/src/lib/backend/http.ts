@@ -113,6 +113,7 @@ import type { BuildRenameObjectSqlOptions } from "@/lib/table/objectRenameSql";
 import type { CreateDatabaseSqlOptions } from "@/lib/database/createDatabaseSql";
 import type { DatabaseNameSqlOptions, DropTableChildObjectSqlOptions, DropObjectSqlOptions, DuplicateTableStructureSqlOptions, CopyTableDataSqlOptions, SchemaNameSqlOptions, TableAdminSqlOptions } from "@/lib/database/dbAdminSql";
 import type { BuildDatabaseSqlExportOptions, BuildExportInsertStatementsOptions } from "@/lib/export/databaseExport";
+import { loadBrowserAppState, saveBrowserAppState } from "@/lib/backend/browserAppStateStorage";
 import type { DataCompareFromTablesOptions, DataCompareFromTablesPreparation, DataCompareSyncPlan, DataCompareSyncPlanOptions, DataComparePreparation, DataComparePreparationOptions } from "@/lib/dataGrid/dataCompare";
 import { apiUrl, apiWebSocketUrl } from "@/lib/common/webPath";
 import type { DataGridSavePreparation } from "@/lib/backend/tauri";
@@ -1024,6 +1025,39 @@ export async function loadDesktopSettings(): Promise<DesktopSettings> {
 
 export async function saveDesktopSettings(settings: DesktopSettings): Promise<void> {
   safeLocalStorageSet(DESKTOP_SETTINGS_STORAGE_KEY, JSON.stringify({ ...DEFAULT_DESKTOP_SETTINGS, ...settings }));
+}
+
+export interface OpenTabsStatePayload {
+  tabs: unknown[];
+  activeTabId: string | null;
+}
+
+export async function loadEditorSettings(): Promise<unknown | null> {
+  return loadBrowserAppState("editor_settings");
+}
+
+export async function saveEditorSettings(settings: unknown): Promise<void> {
+  await saveBrowserAppState("editor_settings", settings);
+}
+
+export async function loadOpenTabsState(): Promise<OpenTabsStatePayload | null> {
+  const value = await loadBrowserAppState("open_tabs");
+  if (!value || typeof value !== "object") return null;
+  const payload = value as Partial<OpenTabsStatePayload>;
+  return Array.isArray(payload.tabs) ? { tabs: payload.tabs, activeTabId: typeof payload.activeTabId === "string" ? payload.activeTabId : null } : null;
+}
+
+export async function saveOpenTabsState(payload: OpenTabsStatePayload): Promise<void> {
+  await saveBrowserAppState("open_tabs", payload);
+}
+
+export async function loadSavedSqlEditorPositions(): Promise<unknown[] | null> {
+  const value = await loadBrowserAppState("saved_sql_editor_positions");
+  return Array.isArray(value) ? value : null;
+}
+
+export async function saveSavedSqlEditorPositions(positions: unknown[]): Promise<void> {
+  await saveBrowserAppState("saved_sql_editor_positions", positions);
 }
 
 export async function completeAppClose(_action: "quit" | "hide"): Promise<void> {

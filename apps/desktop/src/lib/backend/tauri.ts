@@ -376,6 +376,35 @@ export async function saveDesktopSettings(settings: DesktopSettings): Promise<vo
   return invoke("save_desktop_settings", { settings });
 }
 
+export interface OpenTabsStatePayload {
+  tabs: unknown[];
+  activeTabId: string | null;
+}
+
+export async function loadEditorSettings(): Promise<unknown | null> {
+  return invoke("load_editor_settings");
+}
+
+export async function saveEditorSettings(settings: unknown): Promise<void> {
+  return invoke("save_editor_settings", { settings });
+}
+
+export async function loadOpenTabsState(): Promise<OpenTabsStatePayload | null> {
+  return invoke("load_open_tabs_state");
+}
+
+export async function saveOpenTabsState(payload: OpenTabsStatePayload): Promise<void> {
+  return invoke("save_open_tabs_state", { payload });
+}
+
+export async function loadSavedSqlEditorPositions(): Promise<unknown[] | null> {
+  return invoke("load_saved_sql_editor_positions");
+}
+
+export async function saveSavedSqlEditorPositions(positions: unknown[]): Promise<void> {
+  return invoke("save_saved_sql_editor_positions", { positions });
+}
+
 export async function completeAppClose(action: "quit" | "hide"): Promise<void> {
   return invoke("complete_app_close", { action });
 }

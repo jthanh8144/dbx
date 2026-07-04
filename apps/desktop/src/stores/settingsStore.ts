@@ -12,6 +12,7 @@ import { DEFAULT_SQL_SNIPPETS } from "@/lib/sql/sqlCompletion";
 import { setDebugLoggingEnabled } from "@/lib/backend/debugLog";
 import { DEFAULT_TABLE_COLUMN_TEMPLATE_FIELDS, normalizeTableColumnTemplateFields } from "@/lib/table/tableColumnTemplates";
 import { DEFAULT_UI_FONT_FAMILY } from "@/lib/app/appFonts";
+import { safeLocalStorageGet, safeLocalStorageRemove } from "@/lib/backend/safeStorage";
 
 export type AiProvider = "claude" | "openai" | "gemini" | "deepseek" | "qwen" | "ollama" | "openai-compatible" | "codex-cli" | "custom";
 export type AiApiStyle = "completions" | "responses" | "anthropic-messages";
@@ -751,46 +752,34 @@ export function normalizeEditorSettings(settings: Partial<EditorSettings>, exist
   };
 }
 
-function loadEditorSettings(): EditorSettings {
-  // Try new format first
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (raw) {
+function loadLegacyEditorSettings(): EditorSettings | null {
+  const raw = safeLocalStorageGet(STORAGE_KEY);
+  if (raw) {
+    try {
       const parsed = JSON.parse(raw) as Partial<EditorSettings>;
-      if (parsed.exportBatchSize === LEGACY_DEFAULT_EXPORT_BATCH_SIZE && localStorage.getItem(EXPORT_BATCH_SIZE_DEFAULT_MIGRATION_KEY) !== "1") {
+      if (parsed.exportBatchSize === LEGACY_DEFAULT_EXPORT_BATCH_SIZE && safeLocalStorageGet(EXPORT_BATCH_SIZE_DEFAULT_MIGRATION_KEY) !== "1") {
         parsed.exportBatchSize = DEFAULT_EDITOR_SETTINGS.exportBatchSize;
-        localStorage.setItem(EXPORT_BATCH_SIZE_DEFAULT_MIGRATION_KEY, "1");
-        const migrated = normalizeEditorSettings(parsed);
-        saveEditorSettings(migrated);
-        return migrated;
       }
       return normalizeEditorSettings(parsed);
+    } catch {
+      return null;
     }
-  } catch {
-    /* ignore */
   }
 
-  // Migrate old font-size key if new settings don't exist
-  try {
-    const oldSize = localStorage.getItem(OLD_FONT_SIZE_KEY);
-    if (oldSize) {
-      const parsed = parseInt(oldSize, 10);
-      if (!isNaN(parsed)) {
-        const migrated = normalizeEditorSettings({ fontSize: parsed });
-        saveEditorSettings(migrated);
-        localStorage.removeItem(OLD_FONT_SIZE_KEY);
-        return migrated;
-      }
-    }
-  } catch {
-    /* ignore */
-  }
+  const oldSize = safeLocalStorageGet(OLD_FONT_SIZE_KEY);
+  if (!oldSize) return null;
+  const parsed = parseInt(oldSize, 10);
+  return Number.isNaN(parsed) ? null : normalizeEditorSettings({ fontSize: parsed });
+}
 
-  return normalizeEditorSettings({});
+function clearLegacyEditorSettings() {
+  safeLocalStorageRemove(STORAGE_KEY);
+  safeLocalStorageRemove(OLD_FONT_SIZE_KEY);
+  safeLocalStorageRemove(EXPORT_BATCH_SIZE_DEFAULT_MIGRATION_KEY);
 }
 
 function saveEditorSettings(settings: EditorSettings) {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(settings));
+  void api.saveEditorSettings(settings).catch(() => {});
 }
 
 export const useSettingsStore = defineStore("settings", () => {
@@ -799,8 +788,33 @@ export const useSettingsStore = defineStore("settings", () => {
   const aiProviderConfigs = ref<Partial<Record<AiProvider, AiConfig>>>({});
   const desktopSettings = ref<DesktopSettings>({ ...DEFAULT_DESKTOP_SETTINGS });
   const isDesktopSettingsLoaded = ref(false);
+  const isEditorSettingsLoaded = ref(false);
 
-  const editorSettings = ref<EditorSettings>(loadEditorSettings());
+  const editorSettings = ref<EditorSettings>(normalizeEditorSettings({}));
+
+  async function initEditorSettings() {
+    if (isEditorSettingsLoaded.value) return;
+    const saved = await api.loadEditorSettings().catch(() => null);
+    if (saved && typeof saved === "object" && !Array.isArray(saved)) {
+      editorSettings.value = normalizeEditorSettings(saved as Partial<EditorSettings>);
+      isEditorSettingsLoaded.value = true;
+      return;
+    }
+
+    const legacy = loadLegacyEditorSettings();
+    if (legacy) {
+      editorSettings.value = legacy;
+      try {
+        await api.saveEditorSettings(legacy);
+        // Existing desktop users keep settings in localStorage; remove them only
+        // after the async store has accepted the migrated value.
+        clearLegacyEditorSettings();
+      } catch {
+        /* keep legacy values for a later migration attempt */
+      }
+    }
+    isEditorSettingsLoaded.value = true;
+  }
 
   async function initDesktopSettings() {
     if (isDesktopSettingsLoaded.value) return;
@@ -1016,8 +1030,10 @@ export const useSettingsStore = defineStore("settings", () => {
     updateAiConfig,
     isConfigured,
     isAiProviderConfigured,
+    isEditorSettingsLoaded,
     editorSettings,
     desktopSettings,
+    initEditorSettings,
     updateEditorSettings,
     initDesktopSettings,
     updateDesktopSettings,
