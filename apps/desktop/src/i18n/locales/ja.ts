@@ -2066,6 +2066,7 @@ export default withEnglishFallback({
     title: "SQLパラメーター",
     description: "SQLテンプレートのプレースホルダーに値を入力します。DBXは実行前にSQLリテラルへ置換します。",
     name: "パラメーター",
+    syntax: "Syntax",
     type: "型",
     value: "値",
     valuePlaceholder: "値を入力",

@@ -2124,6 +2124,7 @@ export default {
     title: "SQL Parameters",
     description: "Fill values for SQL template placeholders. DBX replaces them before executing the SQL.",
     name: "Parameter",
+    syntax: "Syntax",
     type: "Type",
     value: "Value",
     valuePlaceholder: "Enter value",
