@@ -2972,7 +2972,7 @@ export default {
     iconThemeDefault: "Default",
     iconThemeDefaultDescription: "Use the color DBX app icon.",
     iconThemeBlack: "Black",
-    iconThemeBlackDescription: "Use the black DBX mark for the window, tray, and logo.",
+    iconThemeBlackDescription: "Use the black in-app logo. On macOS, the Dock icon keeps the color mark on a black background, while the menu bar icon follows the system appearance.",
     showTrayIcon: "Show tray/menu bar icon",
     showTrayIconDescription: "When disabled, no icon is shown, but closing the window still hides DBX in the background as before.",
     quitOnClose: "Quit when closing window",

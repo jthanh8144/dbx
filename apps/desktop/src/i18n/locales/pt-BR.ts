@@ -2866,7 +2866,7 @@ export default withEnglishFallback({
     iconThemeDefault: "Padrão",
     iconThemeDefaultDescription: "Usar o ícone colorido do app DBX.",
     iconThemeBlack: "Preto",
-    iconThemeBlackDescription: "Usar a marca DBX em preto na janela, na bandeja e no logo.",
+    iconThemeBlackDescription: "Use o logo preto dentro do aplicativo. No macOS, o Dock mantém a marca colorida sobre fundo preto e o ícone da barra de menus segue o sistema.",
     showTrayIcon: "Mostrar ícone na bandeja/barra de menus",
     showTrayIconDescription: "Quando desativado, nenhum ícone é exibido, mas fechar a janela ainda oculta o DBX em segundo plano como antes.",
     quitOnClose: "Sair ao fechar a janela",

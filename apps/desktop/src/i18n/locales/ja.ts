@@ -2865,7 +2865,7 @@ export default withEnglishFallback({
     iconThemeDefault: "デフォルト",
     iconThemeDefaultDescription: "カラーDBXアプリアイコンを使用。",
     iconThemeBlack: "黒",
-    iconThemeBlackDescription: "ウィンドウ、トレイ、ロゴに黒のDBXマークを使用。",
+    iconThemeBlackDescription: "アプリ内ロゴは黒いマークを使用します。macOSのDockは黒い背景にカラーマークを表示し、メニューバーアイコンはシステム表示に従います。",
     showTrayIcon: "トレイ/メニューバーアイコンを表示",
     showTrayIconDescription: "無効時はアイコンが表示されませんが、ウィンドウを閉じると従来通りDBXはバックグラウンドに隠れます。",
     quitOnClose: "ウィンドウを閉じるときに終了",

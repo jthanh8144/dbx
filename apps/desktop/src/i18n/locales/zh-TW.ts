@@ -2720,7 +2720,7 @@ export default withEnglishFallback({
     iconThemeDefault: "預設",
     iconThemeDefaultDescription: "使用彩色 DBX 應用程式圖示。",
     iconThemeBlack: "黑色",
-    iconThemeBlackDescription: "視窗、系統匣和 Logo 都使用黑色 DBX 標誌。",
+    iconThemeBlackDescription: "應用程式內 Logo 使用黑色標誌；macOS Dock 使用純黑底板和彩色標誌，選單列圖示仍跟隨系統外觀。",
     showTrayIcon: "顯示系統匣/選單欄圖示",
     showTrayIconDescription: "關閉後不顯示圖示，但關閉視窗仍會像之前一樣隱藏到後台。",
     quitOnClose: "關閉視窗時退出程式",
