@@ -1226,7 +1226,8 @@ pub async fn delete_document(client: &Client, database: &str, collection: &str, 
 
 fn document_id_filters(id: &str) -> Vec<Document> {
     if let Some(string_id) = decode_string_document_id(id) {
-        return object_id_then_string_filters(&string_id);
+        // The marker is emitted for an explicitly typed BSON string; do not reinterpret it as ObjectId.
+        return vec![doc! { "_id": Bson::String(string_id) }];
     }
     if let Some(filter) = extended_json_document_id_filter(id) {
         return vec![filter];
@@ -1710,16 +1711,23 @@ mod tests {
     }
 
     #[test]
-    fn document_id_filters_try_object_id_for_explicit_hex_string_ids() {
-        // The grid serializes an ObjectId `_id` as its hex string, so the string
-        // tag must still allow the ObjectId coercion or edits match nothing.
+    fn document_id_filters_keep_explicit_hex_string_ids_as_strings() {
         let hex = "507f1f77bcf86cd799439011";
         let id = format!("__dbx_mongo_string_id__{}", serde_json::to_string(hex).unwrap());
         let filters = document_id_filters(&id);
 
-        assert_eq!(filters.len(), 2);
-        assert!(matches!(filters[0].get("_id"), Some(Bson::ObjectId(oid)) if oid.to_hex() == hex));
-        assert!(matches!(filters[1].get("_id"), Some(Bson::String(value)) if value == hex));
+        assert_eq!(filters.len(), 1);
+        assert!(matches!(filters[0].get("_id"), Some(Bson::String(value)) if value == hex));
+    }
+
+    #[test]
+    fn document_id_filters_keep_explicit_object_ids_as_object_ids() {
+        let filters = document_id_filters(r#"{"$oid":"507f1f77bcf86cd799439011"}"#);
+
+        assert_eq!(filters.len(), 1);
+        assert!(
+            matches!(filters[0].get("_id"), Some(Bson::ObjectId(oid)) if oid.to_hex() == "507f1f77bcf86cd799439011")
+        );
     }
 
     #[test]
