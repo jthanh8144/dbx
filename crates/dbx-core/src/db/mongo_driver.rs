@@ -979,6 +979,149 @@ fn parse_update_array_filters(options_json: Option<&str>) -> Result<Option<Vec<D
         .transpose()
 }
 
+#[derive(Default, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct MongoFindAndModifyOptions {
+    return_document: Option<String>,
+    return_new_document: Option<bool>,
+    new: Option<bool>,
+    upsert: Option<bool>,
+    projection: Option<serde_json::Value>,
+    sort: Option<serde_json::Value>,
+    array_filters: Option<Vec<serde_json::Value>>,
+}
+
+fn parse_find_and_modify_options(options_json: Option<&str>) -> Result<MongoFindAndModifyOptions, String> {
+    match options_json.map(str::trim).filter(|value| !value.is_empty()) {
+        Some(raw) => serde_json::from_str(raw).map_err(|e| format!("Invalid options: {e}")),
+        None => Ok(MongoFindAndModifyOptions::default()),
+    }
+}
+
+fn find_and_modify_returns_after(options: &MongoFindAndModifyOptions) -> bool {
+    if let Some(return_document) = options.return_document.as_deref() {
+        return return_document.eq_ignore_ascii_case("after");
+    }
+    options.return_new_document.or(options.new).unwrap_or(false)
+}
+
+fn parse_optional_document(field: Option<&serde_json::Value>, label: &str) -> Result<Option<Document>, String> {
+    field.map(|value| json_object_to_document(value).map_err(|e| format!("Invalid {label}: {e}"))).transpose()
+}
+
+fn find_and_modify_array_filters(options: &MongoFindAndModifyOptions) -> Result<Option<Vec<Document>>, String> {
+    options
+        .array_filters
+        .as_ref()
+        .map(|filters| {
+            filters
+                .iter()
+                .map(json_filter_to_document)
+                .collect::<Result<Vec<_>, _>>()
+                .map_err(|e| format!("Invalid arrayFilters: {e}"))
+        })
+        .transpose()
+}
+
+fn single_document_result(document: Option<Document>) -> MongoDocumentResult {
+    match document {
+        Some(document) => MongoDocumentResult { documents: vec![bson_to_json(&Bson::Document(document))], total: 1 },
+        None => MongoDocumentResult { documents: Vec::new(), total: 0 },
+    }
+}
+
+pub async fn find_one_and_update(
+    client: &Client,
+    database: &str,
+    collection: &str,
+    filter_json: &str,
+    update_json: &str,
+    options_json: Option<&str>,
+) -> Result<MongoDocumentResult, String> {
+    let filter_value: serde_json::Value =
+        serde_json::from_str(filter_json).map_err(|e| format!("Invalid filter JSON: {e}"))?;
+    let update_value: serde_json::Value =
+        serde_json::from_str(update_json).map_err(|e| format!("Invalid update JSON: {e}"))?;
+    let filter = json_filter_to_document(&filter_value).map_err(|e| format!("Invalid filter: {e}"))?;
+    let update = json_object_to_document(&update_value).map_err(|e| format!("Invalid update: {e}"))?;
+    let options = parse_find_and_modify_options(options_json)?;
+    let col = client.database(database).collection::<Document>(collection);
+    let mut action = col.find_one_and_update(filter, update);
+    if find_and_modify_returns_after(&options) {
+        action = action.return_document(mongodb::options::ReturnDocument::After);
+    }
+    if let Some(upsert) = options.upsert {
+        action = action.upsert(upsert);
+    }
+    if let Some(projection) = parse_optional_document(options.projection.as_ref(), "projection")? {
+        action = action.projection(projection);
+    }
+    if let Some(sort) = parse_optional_document(options.sort.as_ref(), "sort")? {
+        action = action.sort(sort);
+    }
+    if let Some(array_filters) = find_and_modify_array_filters(&options)? {
+        action = action.array_filters(array_filters);
+    }
+    let result = action.await.map_err(|e| e.to_string())?;
+    Ok(single_document_result(result))
+}
+
+pub async fn find_one_and_replace(
+    client: &Client,
+    database: &str,
+    collection: &str,
+    filter_json: &str,
+    replacement_json: &str,
+    options_json: Option<&str>,
+) -> Result<MongoDocumentResult, String> {
+    let filter_value: serde_json::Value =
+        serde_json::from_str(filter_json).map_err(|e| format!("Invalid filter JSON: {e}"))?;
+    let replacement_value: serde_json::Value =
+        serde_json::from_str(replacement_json).map_err(|e| format!("Invalid replacement JSON: {e}"))?;
+    let filter = json_filter_to_document(&filter_value).map_err(|e| format!("Invalid filter: {e}"))?;
+    let replacement = json_object_to_document(&replacement_value).map_err(|e| format!("Invalid replacement: {e}"))?;
+    let options = parse_find_and_modify_options(options_json)?;
+    let col = client.database(database).collection::<Document>(collection);
+    let mut action = col.find_one_and_replace(filter, replacement);
+    if find_and_modify_returns_after(&options) {
+        action = action.return_document(mongodb::options::ReturnDocument::After);
+    }
+    if let Some(upsert) = options.upsert {
+        action = action.upsert(upsert);
+    }
+    if let Some(projection) = parse_optional_document(options.projection.as_ref(), "projection")? {
+        action = action.projection(projection);
+    }
+    if let Some(sort) = parse_optional_document(options.sort.as_ref(), "sort")? {
+        action = action.sort(sort);
+    }
+    let result = action.await.map_err(|e| e.to_string())?;
+    Ok(single_document_result(result))
+}
+
+pub async fn find_one_and_delete(
+    client: &Client,
+    database: &str,
+    collection: &str,
+    filter_json: &str,
+    options_json: Option<&str>,
+) -> Result<MongoDocumentResult, String> {
+    let filter_value: serde_json::Value =
+        serde_json::from_str(filter_json).map_err(|e| format!("Invalid filter JSON: {e}"))?;
+    let filter = json_filter_to_document(&filter_value).map_err(|e| format!("Invalid filter: {e}"))?;
+    let options = parse_find_and_modify_options(options_json)?;
+    let col = client.database(database).collection::<Document>(collection);
+    let mut action = col.find_one_and_delete(filter);
+    if let Some(projection) = parse_optional_document(options.projection.as_ref(), "projection")? {
+        action = action.projection(projection);
+    }
+    if let Some(sort) = parse_optional_document(options.sort.as_ref(), "sort")? {
+        action = action.sort(sort);
+    }
+    let result = action.await.map_err(|e| e.to_string())?;
+    Ok(single_document_result(result))
+}
+
 pub async fn delete_document(client: &Client, database: &str, collection: &str, id: &str) -> Result<u64, String> {
     let col = client.database(database).collection::<Document>(collection);
     for filter in document_id_filters(id) {

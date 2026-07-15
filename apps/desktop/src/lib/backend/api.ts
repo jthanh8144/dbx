@@ -449,6 +449,9 @@ export const mongoUpdateDocuments = forward("mongoUpdateDocuments");
 export const documentDeleteDocument = forward("documentDeleteDocument");
 export const mongoDeleteDocument = forward("mongoDeleteDocument");
 export const mongoDeleteDocuments = forward("mongoDeleteDocuments");
+export const mongoFindOneAndUpdate = forward("mongoFindOneAndUpdate");
+export const mongoFindOneAndReplace = forward("mongoFindOneAndReplace");
+export const mongoFindOneAndDelete = forward("mongoFindOneAndDelete");
 
 // Elasticsearch
 export const elasticsearchListIndices = forward("elasticsearchListIndices");

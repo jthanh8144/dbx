@@ -2128,6 +2128,18 @@ export async function mongoDeleteDocuments(connectionId: string, database: strin
   return post("/api/mongo/delete-documents", { connectionId, database, collection, filterJson, many });
 }
 
+export async function mongoFindOneAndUpdate(connectionId: string, database: string, collection: string, filterJson: string, updateJson: string, optionsJson?: string): Promise<MongoDocumentResult> {
+  return post("/api/mongo/find-one-and-update", { connectionId, database, collection, filterJson, updateJson, optionsJson });
+}
+
+export async function mongoFindOneAndReplace(connectionId: string, database: string, collection: string, filterJson: string, replacementJson: string, optionsJson?: string): Promise<MongoDocumentResult> {
+  return post("/api/mongo/find-one-and-replace", { connectionId, database, collection, filterJson, replacementJson, optionsJson });
+}
+
+export async function mongoFindOneAndDelete(connectionId: string, database: string, collection: string, filterJson: string, optionsJson?: string): Promise<MongoDocumentResult> {
+  return post("/api/mongo/find-one-and-delete", { connectionId, database, collection, filterJson, optionsJson });
+}
+
 // ---------------------------------------------------------------------------
 // History
 // ---------------------------------------------------------------------------

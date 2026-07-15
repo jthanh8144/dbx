@@ -488,6 +488,9 @@ async fn main() {
         .route("/mongo/update-documents", post(routes::mongo::update_documents))
         .route("/mongo/delete-document", post(routes::mongo::delete_document))
         .route("/mongo/delete-documents", post(routes::mongo::delete_documents))
+        .route("/mongo/find-one-and-update", post(routes::mongo::find_one_and_update))
+        .route("/mongo/find-one-and-replace", post(routes::mongo::find_one_and_replace))
+        .route("/mongo/find-one-and-delete", post(routes::mongo::find_one_and_delete))
         // History
         .route("/history", get(routes::history::load_history).delete(routes::history::clear_history))
         .route("/history/save", post(routes::history::save_history))
