@@ -121,6 +121,27 @@ pub async fn mongo_find_documents_core(
     .await
 }
 
+pub async fn mongo_find_one_core(
+    state: &AppState,
+    connection_id: &str,
+    database: &str,
+    collection: &str,
+    filter: Option<&str>,
+    projection: Option<&str>,
+    options: Option<&str>,
+) -> Result<MongoDocumentResult, String> {
+    ensure_document_pool(state, connection_id).await?;
+    let connections = state.connections.read().await;
+    match connections.get(connection_id).ok_or("Not found")? {
+        PoolKind::MongoDb(client) => {
+            mongo_driver::find_one(client, database, collection, filter, projection, options).await
+        }
+        // The legacy agent only exposes paginated find, which also performs a count.
+        PoolKind::Agent(_) => Err("MongoDB legacy agent does not support the bounded findOne path".to_string()),
+        _ => Err("Not a MongoDB connection".to_string()),
+    }
+}
+
 pub async fn mongo_count_documents_core(
     state: &AppState,
     connection_id: &str,

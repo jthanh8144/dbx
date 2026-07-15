@@ -111,6 +111,35 @@ pub async fn mongo_find_documents(
 }
 
 #[tauri::command]
+#[allow(clippy::too_many_arguments)]
+pub async fn mongo_find_one(
+    state: State<'_, Arc<AppState>>,
+    connection_id: String,
+    database: String,
+    collection: String,
+    filter: Option<String>,
+    projection: Option<String>,
+    options: Option<String>,
+    execution_id: Option<String>,
+) -> Result<MongoDocumentResult, String> {
+    let app = state.inner().clone();
+    run_cancellable(
+        &app,
+        execution_id,
+        dbx_core::mongo_ops::mongo_find_one_core(
+            &app,
+            &connection_id,
+            &database,
+            &collection,
+            filter.as_deref(),
+            projection.as_deref(),
+            options.as_deref(),
+        ),
+    )
+    .await
+}
+
+#[tauri::command]
 pub async fn mongo_count_documents(
     state: State<'_, Arc<AppState>>,
     connection_id: String,

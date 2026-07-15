@@ -152,6 +152,14 @@ test("parseMongoFindOneCommand defaults an empty filter and parses projection", 
   assert.deepEqual(JSON.parse(withProjection.projection || "{}"), { message: 1, _id: 0 });
 });
 
+test("parseMongoFindOneCommand accepts documented projection and options arguments", () => {
+  const command = parseMongoFindOneCommand("db.users.findOne({ active: true }, { name: 1 }, { sort: { createdAt: -1 } })");
+  assert.ok(command);
+  assert.deepEqual(JSON.parse(command.filter), { active: true });
+  assert.deepEqual(JSON.parse(command.projection || "{}"), { name: 1 });
+  assert.deepEqual(JSON.parse(command.options || "{}"), { sort: { createdAt: -1 } });
+});
+
 test("parseMongoFindOneCommand rejects cursor chaining and does not collide with find", () => {
   assert.equal(parseMongoFindOneCommand("db.users.findOne({}).limit(5)"), null);
   assert.equal(parseMongoFindOneCommand("db.users.find({})"), null);

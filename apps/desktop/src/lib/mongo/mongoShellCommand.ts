@@ -14,6 +14,7 @@ export interface MongoFindOneCommand {
   collection: string;
   filter: string;
   projection?: string;
+  options?: string;
 }
 
 export interface MongoCountDocumentsCommand {
@@ -141,7 +142,7 @@ export function parseMongoFindOneCommand(input: string): MongoFindOneCommand | n
 
   const args = parseMethodArgs(source, target.methodCallIndex);
   if (!args) return null;
-  if (args.length > 2 && args.slice(2).some((arg) => arg.trim())) return null;
+  if (args.length > 3 && args.slice(3).some((arg) => arg.trim())) return null;
 
   const filter = normalizeJsonArgument(args[0] || "{}");
   if (!filter) return null;
@@ -153,10 +154,14 @@ export function parseMongoFindOneCommand(input: string): MongoFindOneCommand | n
     projection = parsedProjection;
   }
 
+  const options = args[2]?.trim() ? normalizeJsonArgument(args[2]) : undefined;
+  if (args[2]?.trim() && !options) return null;
+
   return {
     collection: target.collection,
     filter,
     ...(projection ? { projection } : {}),
+    ...(options ? { options } : {}),
   };
 }
 

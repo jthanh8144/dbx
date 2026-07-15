@@ -2746,7 +2746,7 @@ export const useQueryStore = defineStore("query", () => {
               }
               case "findOne": {
                 console.info("[DBX][executeTabSql:mongo-find-one:start]", { traceId, collection: mongoCommand.collection, database: currentDatabase });
-                const result = await api.mongoFindDocuments(tab.connectionId, currentDatabase, mongoCommand.collection, 0, 1, mongoCommand.filter, mongoCommand.projection, undefined, executionId);
+                const result = await api.mongoFindOne(tab.connectionId, currentDatabase, mongoCommand.collection, mongoCommand.filter, mongoCommand.projection, mongoCommand.options, executionId);
                 const queryResult = markQueryResultRowsRaw(annotateMongoResult(mongoDocumentsToQueryResult(result.documents, performance.now() - commandStartedAt, result.total)));
                 allResults.push(queryResult);
                 mongoEditTarget = mongoCommands.length === 1 && queryResult.columns.includes("_id") ? { collection: mongoCommand.collection, idColumn: "_id" } : undefined;

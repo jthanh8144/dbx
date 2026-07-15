@@ -80,6 +80,18 @@ pub struct MongoFindRequest {
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
+pub struct MongoFindOneRequest {
+    pub connection_id: String,
+    pub database: String,
+    pub collection: String,
+    pub filter: Option<String>,
+    pub projection: Option<String>,
+    pub options: Option<String>,
+    pub execution_id: Option<String>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct MongoCountRequest {
     pub connection_id: String,
     pub database: String,
@@ -323,6 +335,27 @@ pub async fn find_documents(
             req.filter.as_deref(),
             req.projection.as_deref(),
             req.sort.as_deref(),
+        ),
+    )
+    .await?;
+    Ok(Json(serde_json::to_value(result).map_err(|e| AppError(e.to_string()))?))
+}
+
+pub async fn find_one(
+    State(state): State<Arc<WebState>>,
+    Json(req): Json<MongoFindOneRequest>,
+) -> Result<Json<serde_json::Value>, AppError> {
+    let result = run_cancellable(
+        &state,
+        req.execution_id,
+        dbx_core::mongo_ops::mongo_find_one_core(
+            &state.app,
+            &req.connection_id,
+            &req.database,
+            &req.collection,
+            req.filter.as_deref(),
+            req.projection.as_deref(),
+            req.options.as_deref(),
         ),
     )
     .await?;
