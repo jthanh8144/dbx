@@ -14,6 +14,7 @@ import {
   evaluateMongoWriteSafety,
   mongoCollectionStatsToQueryResult,
   mongoCountToQueryResult,
+  mongoDistinctToQueryResult,
   mongoCreateIndexToQueryResult,
   mongoDocumentsToQueryResult,
   mongoDroppedIndexesToQueryResult,
@@ -2980,6 +2981,21 @@ export const useQueryStore = defineStore("query", () => {
                   database: currentDatabase,
                   rowCount: result.documents.length,
                   total: result.total,
+                  elapsed: elapsed(),
+                });
+                break;
+              }
+              case "distinct": {
+                queryExecutionLog("info", "mongo-distinct:start", { traceId, collection: mongoCommand.collection, database: currentDatabase, field: mongoCommand.field });
+                const result = await api.mongoDistinct(tab.connectionId, currentDatabase, mongoCommand.collection, mongoCommand.field, mongoCommand.filter, executionId);
+                allResults.push(markQueryResultRowsRaw(annotateMongoResult(mongoDistinctToQueryResult(mongoCommand.field, result.documents, performance.now() - commandStartedAt))));
+                mongoEditTarget = undefined;
+                queryExecutionLog("info", "mongo-distinct:done", {
+                  traceId,
+                  collection: mongoCommand.collection,
+                  database: currentDatabase,
+                  field: mongoCommand.field,
+                  valueCount: result.documents.length,
                   elapsed: elapsed(),
                 });
                 break;

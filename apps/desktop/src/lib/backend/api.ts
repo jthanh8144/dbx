@@ -441,6 +441,7 @@ export const mongoFindOne = forward("mongoFindOne");
 export const mongoCountDocuments = forward("mongoCountDocuments");
 export const mongoServerVersion = forward("mongoServerVersion");
 export const mongoAggregateDocuments = forward("mongoAggregateDocuments");
+export const mongoDistinct = forward("mongoDistinct");
 export const mongoCollectionStats = forward("mongoCollectionStats");
 export const mongoCreateIndex = forward("mongoCreateIndex");
 export const mongoDropIndexes = forward("mongoDropIndexes");

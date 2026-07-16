@@ -2111,6 +2111,10 @@ export async function mongoAggregateDocuments(connectionId: string, database: st
   return post("/api/mongo/aggregate-documents", { connectionId, database, collection, pipelineJson, maxRows, executionId });
 }
 
+export async function mongoDistinct(connectionId: string, database: string, collection: string, field: string, filter?: string, executionId?: string): Promise<MongoDocumentResult> {
+  return post("/api/mongo/distinct", { connectionId, database, collection, field, filter, executionId });
+}
+
 export async function mongoCollectionStats(connectionId: string, database: string, collection: string, scale?: number, executionId?: string): Promise<MongoCollectionStatsResult> {
   return post("/api/mongo/collection-stats", { connectionId, database, collection, scale, executionId });
 }

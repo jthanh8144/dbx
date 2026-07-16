@@ -1886,6 +1886,10 @@ export async function mongoAggregateDocuments(connectionId: string, database: st
   return invoke("mongo_aggregate_documents", { connectionId, database, collection, pipelineJson, maxRows, executionId });
 }
 
+export async function mongoDistinct(connectionId: string, database: string, collection: string, field: string, filter?: string, executionId?: string): Promise<MongoDocumentResult> {
+  return invoke("mongo_distinct", { connectionId, database, collection, field, filter, executionId });
+}
+
 export async function mongoCollectionStats(connectionId: string, database: string, collection: string, scale?: number, executionId?: string): Promise<MongoCollectionStatsResult> {
   return invoke("mongo_collection_stats", { connectionId, database, collection, scale, executionId });
 }

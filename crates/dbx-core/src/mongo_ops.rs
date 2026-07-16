@@ -257,6 +257,24 @@ pub async fn mongo_aggregate_documents_core(
     }
 }
 
+pub async fn mongo_distinct_core(
+    state: &AppState,
+    connection_id: &str,
+    database: &str,
+    collection: &str,
+    field: &str,
+    filter: Option<&str>,
+) -> Result<MongoDocumentResult, String> {
+    ensure_document_pool(state, connection_id).await?;
+    let connections = state.connections.read().await;
+    match connections.get(connection_id).ok_or("Not found")? {
+        PoolKind::MongoDb(client) => mongo_driver::distinct(client, database, collection, field, filter).await,
+        // The legacy agent protocol has no distinct method and no read that could stand in for it.
+        PoolKind::Agent(_) => Err("MongoDB legacy agent does not support distinct".to_string()),
+        _ => Err("Not a MongoDB connection".to_string()),
+    }
+}
+
 pub async fn mongo_create_index_core(
     state: &AppState,
     connection_id: &str,
