@@ -4,6 +4,10 @@ import { shellLineCommentRanges } from "@/lib/editor/shellLineCommentRanges";
 
 type EditorViewType = import("@codemirror/view").EditorView;
 type DecorationSet = import("@codemirror/view").DecorationSet;
+interface SyntaxNodeLike {
+  name: string;
+  parent: SyntaxNodeLike | null;
+}
 
 export const SHELL_LINE_COMMENT_CLASS = "cm-shell-line-comment";
 
@@ -11,6 +15,7 @@ interface ShellLineCommentHighlightDeps {
   ViewPlugin: typeof import("@codemirror/view").ViewPlugin;
   Decoration: typeof import("@codemirror/view").Decoration;
   highlightingFor: typeof import("@codemirror/language").highlightingFor;
+  syntaxTree: typeof import("@codemirror/language").syntaxTree;
 }
 
 /** Reuses the active theme's comment colour so `//` matches what the SQL grammar gives `--`. */
@@ -19,15 +24,32 @@ export function shellLineCommentClass(state: import("@codemirror/state").EditorS
   return themeClass ? `${SHELL_LINE_COMMENT_CLASS} ${themeClass}` : SHELL_LINE_COMMENT_CLASS;
 }
 
-export function createShellLineCommentHighlight({ ViewPlugin, Decoration, highlightingFor }: ShellLineCommentHighlightDeps): Extension {
+export function createShellLineCommentHighlight({ ViewPlugin, Decoration, highlightingFor, syntaxTree }: ShellLineCommentHighlightDeps): Extension {
   function buildDecorations(view: EditorViewType, className: string): DecorationSet {
-    const visible = view.visibleRanges;
-    const end = visible[visible.length - 1]?.to ?? 0;
-    if (!end) return Decoration.set([]);
-    // Quote tracking needs the text before the viewport, so scan from the start of the document.
-    const ranges = shellLineCommentRanges(view.state.doc.sliceString(0, end));
+    const tree = syntaxTree(view.state);
+    const ranges = new Map<number, number>();
+    for (const visibleRange of view.visibleRanges) {
+      const from = view.state.doc.lineAt(visibleRange.from).from;
+      const to = view.state.doc.lineAt(visibleRange.to).to;
+      const text = view.state.doc.sliceString(from, to);
+      for (const range of shellLineCommentRanges(text)) {
+        const absoluteFrom = from + range.from;
+        const absoluteTo = from + range.to;
+        if (absoluteFrom >= visibleRange.to || absoluteTo <= visibleRange.from) continue;
+        let node: SyntaxNodeLike | null = tree.resolveInner(absoluteFrom, 1);
+        let excluded = false;
+        while (node) {
+          if (node.name === "BlockComment" || node.name === "String" || node.name === "QuotedIdentifier") {
+            excluded = true;
+            break;
+          }
+          node = node.parent;
+        }
+        if (!excluded) ranges.set(absoluteFrom, absoluteTo);
+      }
+    }
     const decoration = Decoration.mark({ class: className });
-    return Decoration.set(ranges.filter((range) => visible.some((visibleRange) => range.from < visibleRange.to && range.to > visibleRange.from)).map((range) => decoration.range(range.from, range.to)));
+    return Decoration.set([...ranges].sort(([left], [right]) => left - right).map(([from, to]) => decoration.range(from, to)));
   }
 
   return ViewPlugin.fromClass(

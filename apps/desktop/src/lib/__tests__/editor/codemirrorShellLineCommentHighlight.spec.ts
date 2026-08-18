@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 
-import { HighlightStyle, highlightingFor, syntaxHighlighting } from "@codemirror/language";
+import { HighlightStyle, highlightingFor, syntaxHighlighting, syntaxTree } from "@codemirror/language";
 import { sql } from "@codemirror/lang-sql";
 import { EditorState } from "@codemirror/state";
 import { Decoration, EditorView, ViewPlugin } from "@codemirror/view";
@@ -21,7 +21,7 @@ function mount(doc: string, extensions: import("@codemirror/state").Extension[] 
   view = new EditorView({
     state: EditorState.create({
       doc,
-      extensions: [sql(), ...extensions, createShellLineCommentHighlight({ ViewPlugin, Decoration, highlightingFor })],
+      extensions: [sql(), ...extensions, createShellLineCommentHighlight({ ViewPlugin, Decoration, highlightingFor, syntaxTree })],
     }),
     parent: document.body,
   });
@@ -34,6 +34,13 @@ describe("createShellLineCommentHighlight", () => {
     const decorated = Array.from(editor.dom.querySelectorAll(`.${SHELL_LINE_COMMENT_CLASS}`)).map((node) => node.textContent);
 
     expect(decorated).toEqual(["// list users"]);
+  });
+
+  it("does not decorate // inside parsed block comments or strings", () => {
+    const editor = mount('/* hidden // marker */\nSELECT "https://example.com";\n// shown');
+    const decorated = Array.from(editor.dom.querySelectorAll(`.${SHELL_LINE_COMMENT_CLASS}`)).map((node) => node.textContent);
+
+    expect(decorated).toEqual(["// shown"]);
   });
 
   it("carries the active theme's comment class so // matches SQL --", () => {

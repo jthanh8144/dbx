@@ -3,10 +3,11 @@ import { toggleLineComment } from "@codemirror/commands";
 import { sql } from "@codemirror/lang-sql";
 import { EditorState, Prec, type Transaction } from "@codemirror/state";
 import { describe, expect, it, vi } from "vitest";
-import { queryEditorLineCommentToken } from "@/lib/editor/queryEditorLineComment";
+import { queryEditorCommentTokens, queryEditorLineCommentToken } from "@/lib/editor/queryEditorLineComment";
 
 const queryEditorSource = readFileSync(new URL("../../../components/editor/QueryEditor.vue", import.meta.url), "utf8");
 const editorThemesSource = readFileSync(new URL("../../editor/editorThemes.ts", import.meta.url), "utf8");
+const shellHighlightSource = readFileSync(new URL("../../editor/codemirrorShellLineCommentHighlight.ts", import.meta.url), "utf8");
 
 function runToggleLineComment(doc: string, commentToken: string) {
   let state = EditorState.create({
@@ -32,6 +33,13 @@ describe("queryEditorLineCommentToken", () => {
     expect(queryEditorLineCommentToken("mongodb")).toBe("//");
   });
 
+  it("keeps block comment tokens while overriding MongoDB line comments", () => {
+    expect(queryEditorCommentTokens("mongodb")).toEqual({
+      line: "//",
+      block: { open: "/*", close: "*/" },
+    });
+  });
+
   it("keeps the SQL line comment marker elsewhere", () => {
     expect(queryEditorLineCommentToken(undefined)).toBe("--");
     expect(queryEditorLineCommentToken("mysql")).toBe("--");
@@ -41,15 +49,21 @@ describe("queryEditorLineCommentToken", () => {
 
 describe("QueryEditor line comment", () => {
   it("overrides the language comment tokens in the SQL language compartment", () => {
-    expect(queryEditorSource).toContain("Prec.highest(EditorState.languageData.of(() => [{ commentTokens: { line: queryEditorLineCommentToken(props.databaseType) } }]))");
+    expect(queryEditorSource).toContain("Prec.highest(EditorState.languageData.of(() => [{ commentTokens: queryEditorCommentTokens(props.databaseType) }]))");
   });
 
   it("highlights // comments with the theme's comment style", () => {
     expect(queryEditorSource).toContain('queryEditorLineCommentToken(props.databaseType) === "//" ? shellLineCommentHighlightPlugin : []');
-    expect(queryEditorSource).toContain("const shellLineCommentHighlightPlugin = createShellLineCommentHighlight({ ViewPlugin, Decoration, highlightingFor });");
+    expect(queryEditorSource).toContain("const shellLineCommentHighlightPlugin = createShellLineCommentHighlight({ ViewPlugin, Decoration, highlightingFor, syntaxTree });");
     expect(queryEditorSource).toContain("shellLineCommentTheme(EditorView),");
     expect(editorThemesSource).toContain('".cm-shell-line-comment *"');
     expect(editorThemesSource).toContain('color: "inherit !important"');
+  });
+
+  it("bounds shell comment scanning to syntax-aware visible lines", () => {
+    expect(shellHighlightSource).toContain("view.state.doc.lineAt(visibleRange.from).from");
+    expect(shellHighlightSource).toContain("tree.resolveInner(absoluteFrom, 1)");
+    expect(shellHighlightSource).not.toContain("sliceString(0, end)");
   });
 
   it("comments a MongoDB line with //", () => {
